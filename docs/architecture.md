@@ -1,6 +1,6 @@
 # Архітектура модуля `vd_data_migration`
 
-> Версія: 0.2 | Базується на: `docs/requirements.md` v0.3, `.rules/odoo-conventions.md`
+> Версія: 0.3 | Базується на: `docs/requirements.md` v0.4, `.rules/odoo-conventions.md`
 
 ---
 
@@ -13,7 +13,7 @@
     ├── __manifest__.py
     |
     ├── models/                      # Тільки models.Model / AbstractModel
-    │   └── __init__.py              # (поки порожнього, залишок для майбутніх моделей)
+    │   └── __init__.py              # (порожньо, готово до розширення)
     |
     ├── wizard/                      # Тільки models.TransientModel
     │   ├── __init__.py
@@ -22,13 +22,13 @@
     |
     ├── services/                    # Чиста Python-логіка, без Odoo ORM
     │   ├── __init__.py
-    │   ├── rpc_client.py            # XML-RPC підключення і операції
+    │   ├── json_rpc_client.py       # JSON-RPC клієнт (urllib.request + json)
     │   ├── field_mapper.py          # Зіставлення полів source/target
-    │   └── record_importer.py       # Основна логіка імпорту
+    │   └── record_importer.py       # Обробка батчу записів
     |
     ├── controllers/
     │   ├── __init__.py
-    │   └── migration_controller.py  # JSON HTTP ендпоінт для JS-віджета
+    │   └── migration_controller.py  # HTTP JSON ендпоінти для Owl-компонента
     |
     ├── views/
     │   ├── migration_wizard_views.xml  # Form view візарда
@@ -43,7 +43,7 @@
         │   └── icon.png
         └── src/
             ├── js/
-            │   └── migration_progress_widget.js   # Owl 2 компонент
+            │   └── migration_progress_widget.js   # Owl 2 компонент-оркестратор
             ├── xml/
             │   └── migration_progress_widget.xml  # Owl-шаблон
             └── css/
@@ -60,73 +60,105 @@
 
 ```
 Поля:
-┌────────────────────┬────────────────┬──────────────────────────────┐
-| Назва             | Тип           | Опис                         |
-├────────────────────┼────────────────┼──────────────────────────────┤
-| source_url         | Char           | URL бази-джерела              |
-| source_db          | Char           | Назва БД                      |
-| source_login       | Char           | Логін                          |
-| source_password    | Char           | Пароль (password=True)         |
-| target_model_id    | Many2one       | ir.model (поточна БД)          |
-| field_line_ids     | One2many       | vd.migration.field.line        |
-| record_count_source| Integer        | read-only, з джерела         |
-| record_count_target| Integer        | read-only, поточна БД        |
-| progress           | Integer        | 0-100, для прогрес-бара     |
-| progress_label     | Char           | «X / N записів»               |
-| state              | Selection      | draft/analysed/loading/done/stopped |
-└────────────────────┴────────────────┴──────────────────────────────┘
+┌──────────────────────┬────────────────┬──────────────────────────────────────────┐
+| Назва               | Тип           | Опис                                     |
+├──────────────────────┼────────────────┼──────────────────────────────────────────┤
+| source_url           | Char           | URL бази-джерела                          |
+| source_db            | Char           | Назва БД                                  |
+| source_login         | Char           | Логін                                      |
+| source_password      | Char           | Пароль (password=True)                     |
+| source_session_id    | Char           | JSON-RPC session_id (пам'ять, не в БД)    |
+| target_model_id      | Many2one       | ir.model (поточна БД)                     |
+| field_line_ids       | One2many       | vd.migration.field.line                   |
+| record_count_source  | Integer        | read-only, з джерела                      |
+| record_count_target  | Integer        | read-only, поточна БД                     |
+| progress             | Integer        | 0-100, для прогрес-бара                   |
+| progress_label       | Char           | «X / N записів»                           |
+| stats_created        | Integer        | Статистика: створено                       |
+| stats_updated        | Integer        | Статистика: оновлено                       |
+| stats_errors         | Integer        | Статистика: помилок                        |
+| state                | Selection      | draft/analysed/loading/done/stopped        |
+└──────────────────────┴────────────────┴──────────────────────────────────────────┘
 
 Методи:
-- action_analyse()       → RpcClient + FieldMapper, заповнює field_line_ids
-- action_import()        → RecordImporter, оновлює progress
-- action_delete()        → діалог підтвердження, unlink()
-- action_stop()          → встановлює _stop_requested = True
-- _get_rpc_client()      → створює і повертає RpcClient
+- action_analyse()       → JsonRpcClient + FieldMapper, заповнює field_line_ids, state='analysed'
+- action_import()        → валідація, скидання stats, state='loading', повертає form reload
+- action_delete()        → діалог підтвердження, unlink(), record_count_target=0
+- _get_rpc_client()      → створює і повертає JsonRpcClient з полів wizard
 ```
 
 ---
 
 ### 2.2 `vd.migration.field.line` — `wizard/migration_field_line.py`
 
-`TransientModel` — один рядок таблиці полів (One2many об’єкт wizard).
+`TransientModel` — один рядок таблиці полів.
 
 ```
 Поля:
-┌──────────────┬───────────────┬────────────────────────────────────┐
-| Назва       | Тип          | Опис                               |
-├──────────────┼───────────────┼────────────────────────────────────┤
-| wizard_id    | Many2one      | Зв’язок на vd.migration.wizard    |
-| field_name   | Char          | Технічна назва поля             |
-| field_label  | Char          | Мітка (string)                   |
-| field_type   | Char          | Тип поля                        |
-| source_exists| Boolean       | read-only                          |
-| include      | Boolean       | Увімкнути в міграцію          |
-| comodel      | Char          | Пов’язана модель (M2O/M2M/O2M) |
-└──────────────┴───────────────┴────────────────────────────────────┘
+┌──────────────┬───────────────┬────────────────────────────────────────┐
+| Назва       | Тип          | Опис                                   |
+├──────────────┼───────────────┼────────────────────────────────────────┤
+| wizard_id    | Many2one      | Зв'язок на vd.migration.wizard        |
+| field_name   | Char          | Технічна назва поля                   |
+| field_label  | Char          | Мітка (string)                         |
+| field_type   | Char          | Тип поля                               |
+| source_exists| Boolean       | read-only                              |
+| include      | Boolean       | Увімкнути в міграцію                   |
+| comodel      | Char          | Пов'язана модель (M2O/M2M/O2M)        |
+└──────────────┴───────────────┴────────────────────────────────────────┘
 ```
 
 ---
 
 ## 3. Опис сервісів (`services/`)
 
-> Сервіси — чисті Python-класи, без спадкування з Odoo ORM. Приймають `env` як аргумент.
+> Сервіси — чисті Python-класи без ORM-залежності. Приймають `env` як аргумент.
 
-### 3.1 `RpcClient` — `services/rpc_client.py`
+### 3.1 `JsonRpcClient` — `services/json_rpc_client.py`
 
-Інкапсулює з’єднання з Odoo через `xmlrpc.client` (stdlib).
+Інкапсулює JSON-RPC 2.0 комунікацію з Odoo через `urllib.request` + `json` (тільки stdlib).
 
 ```python
-class RpcClient:
-    def __init__(self, url: str, db: str, login: str, password: str): ...
-    def authenticate(self) -> int:                        # повертає uid
-    def model_exists(self, model: str) -> bool:           # чи існує модель
-    def fields_get(self, model: str) -> dict:             # поля моделі
-    def search_count(self, model: str) -> int:            # кількість записів
+class JsonRpcClient:
+    """
+    JSON-RPC 2.0 клієнт для Odoo.
+    Ендпоінти джерела:
+      Auth:   POST /web/session/authenticate
+      Call:   POST /web/dataset/call_kw
+    """
+    def __init__(self, url: str, db: str, login: str, password: str):
+        self.url = url.rstrip('/')
+        self.db = db
+        self.login = login
+        self.password = password
+        self._session_id: str | None = None
+        self._uid: int | None = None
+
+    def authenticate(self) -> str:
+        # POST /web/session/authenticate
+        # Повертає session_id (str)
+        # Зберігає у self._session_id
+
+    def _call_kw(self, model: str, method: str,
+                 args: list, kwargs: dict) -> any:
+        # POST /web/dataset/call_kw
+        # Headers: Cookie: session_id=...
+        # Повертає result або кидає UserError
+
+    def model_exists(self, model: str) -> bool:
+        # search_count на ir.model де model = model
+
+    def fields_get(self, model: str) -> dict:
+        # fields_get з attributes=['string','type','relation']
+
+    def search_count(self, model: str) -> int:
+
     def search_read(self, model: str, fields: list,
-                    offset: int, limit: int) -> list:     # читання батча
+                    offset: int, limit: int) -> list:
+        # Повертає список записів (dict)
 ```
 
-Обробка помилок: `ConnectionError`, `AuthenticationError`, `socket.timeout`.
+Обробка помилок: `socket.timeout`, `urllib.error.URLError`, JSON-RPC `error` поле.
 Всі помилки логуються через `_logger` і перекидаються як `UserError`.
 
 ---
@@ -137,97 +169,199 @@ class RpcClient:
 
 ```python
 class FieldMapper:
-    def __init__(self, rpc: RpcClient, env): ...
+    def __init__(self, rpc: JsonRpcClient, env): ...
+
     def build_field_lines(self, model_name: str) -> list[dict]:
-        # 1. fields_get() з джерела
-        # 2. поля поточної БД через env[model_name]._fields
-        # 3. Зіставлення: source_exists = поле є в source_fields
+        # 1. fields_get() з джерела (через JsonRpcClient)
+        # 2. Поля поточної БД через env[model_name]._fields
+        # 3. Зіставлення: source_exists = field_name in source_fields
         # 4. include = True для всіх; one2many → include = False
-        # 5. Повернути list[dict] для запису в field_line_ids
+        # 5. Повертає list[dict] для запису в field_line_ids
 ```
 
 ---
 
 ### 3.3 `RecordImporter` — `services/record_importer.py`
 
-Основна логіка імпорту записів.
+Обробляє один батч записів (отриманий з фронтенду).
+Цикл по батчах — на фронтенді, а не тут.
 
 ```python
 class RecordImporter:
-    BATCH_SIZE = 100
 
-    def __init__(self, rpc: RpcClient, env, wizard): ...
+    def __init__(self, env, wizard): ...
 
-    def run(self, model_name: str, field_lines: list) -> dict:
+    def process_batch(self, model_name: str,
+                      records: list[dict],
+                      field_lines: list) -> dict:
         # Повертає: {'created': N, 'updated': N, 'errors': N}
-
-    def _process_batch(self, model_name: str, records: list,
-                       field_lines: list) -> None: ...
+        # Для кожного запису:
+        #   → _prepare_values(record, field_lines)
+        #   → _find_local_record(model_name, record['id'])
+        #   → write() або create()
 
     def _prepare_values(self, record: dict, field_lines: list) -> dict:
-        # Перетворює запис z source в dict для write/create
+        # Перетворює запис з source у dict для write/create
+        # Прості поля: копіює напряму
+        # many2one:  _resolve_many2one(comodel, source_id)
+        # many2many: _resolve_many2many(comodel, source_ids)
+        # one2many / include=False: пропускає
 
-    def _resolve_many2one(self, comodel: str, source_id: int) -> int:
+    def _find_local_record(self, model_name: str,
+                           source_id: int) -> int | None:
+        # Пошук запису по id у поточній БД
+
+    def _resolve_many2one(self, comodel: str,
+                          source_id: int) -> int:
         # FR-08: пошук за id / створення з name="<{source_id}>"
 
-    def _resolve_many2many(self, comodel: str, source_ids: list) -> list:
-        # FR-09: _resolve_many2one для кожного id, повертає [(6,0,[...])]
-
-    def _find_local_record(self, model_name: str, source_id: int) -> int | None:
-        # Пошук запису по id у поточній БД
+    def _resolve_many2many(self, comodel: str,
+                           source_ids: list) -> list:
+        # FR-09: застосовує _resolve_many2one, повертає [(6, 0, [...])]
 ```
 
 ---
 
 ## 4. Контролер (`controllers/migration_controller.py`)
 
-Надає HTTP JSON-ендпоінти для полінгу прогресу з JS-віджета:
+Чотири HTTP JSON-ендпоінти, всі з `auth='user'`:
 
 ```
-GET  /vd_migration/progress/<wizard_id>
-     → {'progress': 42, 'label': '42 / 100 записів',
-        'state': 'loading', 'created': 40, 'updated': 2, 'errors': 0}
-
-POST /vd_migration/stop/<wizard_id>
-     → {'ok': True}
+──────────────────────────────────────────────────────────────────────
+POST /vd_migration/fetch_batch
+  Вхід:  { wizard_id, offset, limit }   (limit завжди 100)
+  Дія:   читає поля з wizard.field_line_ids (include=True)
+         викликає JsonRpcClient.search_read(model, fields, offset, limit)
+  Вихід: { records: [...], total: N }
+  Помилки: wizard не знайдено → 404; RPC-помилка → { error: '...' }
+──────────────────────────────────────────────────────────────────────
+POST /vd_migration/process_batch
+  Вхід:  { wizard_id, records: [...] }
+  Дія:   RecordImporter.process_batch(model, records, field_lines)
+  Вихід: { created: N, updated: N, errors: N }
+──────────────────────────────────────────────────────────────────────
+POST /vd_migration/finalize
+  Вхід:  { wizard_id, state: 'done'|'stopped',
+           created: N, updated: N, errors: N }
+  Дія:   wizard.state = state
+         wizard.stats_created/updated/errors = ...
+         wizard.progress = 100 (якщо done)
+  Вихід: { ok: True }
+──────────────────────────────────────────────────────────────────────
+POST /vd_migration/stop/<wizard_id>     (запасний, для підстраховки)
+  Дія:   wizard.state = 'stopped'
+  Вихід: { ok: True }
+──────────────────────────────────────────────────────────────────────
 ```
-
-Авторизація: `auth='user'`. Поверка по `group_migration_admin`.
 
 ---
 
-## 5. JS Owl-віджет (`MigrationProgressWidget`)
+## 5. JS Owl-компонент-оркестратор (`MigrationProgressWidget`)
 
-Реалізується як **Owl 2 компонент** (Odoo 18.0).
+Reалізується як **Owl 2 компонент** (Odoo 18.0). Є **оркестратором міграції** — виконує import-цикл на фронтенді.
 
-```
-Стан:
-- wizardId    — id запису wizard з DOM-атрибута
-- progress    — 0–100
-- label       — 'X / N записів'
-- state       — idle | loading | done | stopped | error
-- stats       — { created, updated, errors }
-
-Методи:
-- startPolling()   — setInterval 1000ms → GET /vd_migration/progress/<id>
-- stopPolling()    — clearInterval
-- onStop()         — POST /vd_migration/stop/<id>
-
-Шаблон (XML):
-<div class="vd-progress-bar">
-  <div class="progress-track">
-    <div class="progress-fill" style="width: {progress}%"/>
-  </div>
-  <span>{label}</span>
-  <span class="badge badge-{state}">{state}</span>
-  <button t-if="state === 'loading'" t-on-click="onStop">Зупинити</button>
-  <div t-if="state in ['done','stopped']" class="vd-stats">
-    Створено: {stats.created} | Оновлено: {stats.updated} | Помилок: {stats.errors}
-  </div>
-</div>
+### Стан компонента
+```javascript
+setup() {
+    this.state = useState({
+        progress: 0,          // 0–100
+        label: '',            // 'X / N записів'
+        status: 'idle',       // idle | loading | done | stopped | error
+        stats: { created: 0, updated: 0, errors: 0 },
+    });
+    this._stopped = false;
+    // Авто-старт: якщо wizard.state == 'loading' — запустити startImport()
+    onWillStart(async () => {
+        if (this.props.record.data.state === 'loading') {
+            await this.startImport();
+        }
+    });
+}
 ```
 
-Інтеграція з form view: `<field name="progress" widget="vd_migration_progress"/>`
+### Import-цикл
+```javascript
+async startImport() {
+    this._stopped = false;
+    this.state.status = 'loading';
+    const wizardId = this.props.record.data.id;
+    const total    = this.props.record.data.record_count_source;
+    let offset = 0;
+
+    while (!this._stopped) {
+        // 1. Отримати батч з джерела (через бекенд-проксі)
+        const { records } = await this._fetchBatch(wizardId, offset);
+
+        // 2. Якщо 0 записів — всі дані отримані
+        if (!records.length) break;
+
+        // 3. Обробити батч на бекенді
+        const result = await this._processBatch(wizardId, records);
+
+        // 4. Оновити стан UI
+        offset += records.length;
+        this._mergeStats(result);
+        this.state.progress = total ? Math.round(offset / total * 100) : 100;
+        this.state.label = `${offset} / ${total} записів`;
+    }
+
+    // 5. Завершення
+    const finalState = this._stopped ? 'stopped' : 'done';
+    await this._finalize(wizardId, finalState);
+    this.state.status = finalState;
+}
+
+onStop() {
+    this._stopped = true;  // зупинить цикл після поточного батчу
+}
+
+async _fetchBatch(wizardId, offset) {
+    return this.env.services.http.post(
+        '/vd_migration/fetch_batch',
+        { wizard_id: wizardId, offset, limit: 100 }
+    );
+}
+
+async _processBatch(wizardId, records) {
+    return this.env.services.http.post(
+        '/vd_migration/process_batch',
+        { wizard_id: wizardId, records }
+    );
+}
+
+async _finalize(wizardId, state) {
+    return this.env.services.http.post(
+        '/vd_migration/finalize',
+        { wizard_id: wizardId, state, ...this.state.stats }
+    );
+}
+```
+
+### Шаблон (`migration_progress_widget.xml`)
+```xml
+<t t-name="vd_migration.MigrationProgressWidget">
+  <div class="vd-progress-bar" t-if="state.status !== 'idle'">
+    <div class="progress-track">
+      <div class="progress-fill" t-attf-style="width: {{state.progress}}%"/>
+    </div>
+    <span class="vd-label" t-esc="state.label"/>
+    <span t-attf-class="badge badge-{{state.status}}" t-esc="state.status"/>
+    <button t-if="state.status === 'loading'"
+            t-on-click="onStop" class="btn btn-sm btn-warning">
+      Зупинити
+    </button>
+    <div t-if="state.status in ['done','stopped']" class="vd-stats">
+      Створено: <b t-esc="state.stats.created"/> |
+      Оновлено: <b t-esc="state.stats.updated"/> |
+      Помилок:  <b t-esc="state.stats.errors"/>
+    </div>
+  </div>
+</t>
+```
+
+Реєстрація: `registry.category('fields').add('vd_migration_progress', MigrationProgressWidget)`
+
+Інтеграція у form view: `<field name="progress" widget="vd_migration_progress"/>`
 
 ---
 
@@ -252,18 +386,18 @@ POST /vd_migration/stop/<wizard_id>
   <button name="action_analyse" string="Аналізувати"
           type="object" class="btn-primary"/>
 
-  <field name="field_line_ids">
+  <field name="field_line_ids" invisible="state == 'draft'">
     <tree editable="bottom">
-      <field name="field_name"   readonly="1"/>
-      <field name="field_label"  readonly="1"/>
-      <field name="field_type"   readonly="1"/>
+      <field name="field_name"    readonly="1"/>
+      <field name="field_label"   readonly="1"/>
+      <field name="field_type"    readonly="1"/>
       <field name="source_exists" readonly="1"/>
       <field name="include"/>
-      <field name="comodel"      readonly="1"/>
+      <field name="comodel"       readonly="1"/>
     </tree>
   </field>
 
-  <!-- Прогрес-бар: видимий під час завантаження та після -->
+  <!-- Прогрес-бар / оркестратор — Owl 2 компонент -->
   <field name="progress" widget="vd_migration_progress"
          invisible="state not in ['loading','done','stopped']"/>
 
@@ -285,14 +419,16 @@ POST /vd_migration/stop/<wizard_id>
 
 ```
 draft ──[action_analyse OK]──► analysed
-                                   │
-                          [action_import]
-                                   │
-                               loading ──[action_stop]─► stopped
-                                   │
-                               [finish]
-                                   │
-                                 done
+                                    │
+                           [action_import]
+                                    │
+                                loading ──[this._stopped=true]──► stopped
+                                    │                                │
+                              [records=0]                      [finalize]
+                                    │
+                               [finalize]
+                                    │
+                                  done
 
 Будь-який стан + помилка → state залишається, показується UserError
 ```
@@ -306,7 +442,7 @@ draft ──[action_analyse OK]──► analysed
     'name': 'VD Data Migration',
     'version': '18.0.1.0.0',
     'category': 'Tools',
-    'summary': 'Migrate data between Odoo 18.0 instances via XML-RPC',
+    'summary': 'Migrate data between Odoo 18.0 instances via JSON-RPC',
     'author': 'Vlad Lavrenko',
     'depends': ['base', 'web'],
     'application': True,
@@ -356,34 +492,48 @@ ir.model.access.csv:
      │ натиск «Аналізувати»
      ▼
 [wizard/migration_wizard.action_analyse()]
-     → services/rpc_client.py: authenticate()
-     → services/rpc_client.py: model_exists()
-     → services/rpc_client.py: fields_get()     ←── source DB (XML-RPC)
+     → services/json_rpc_client.py: authenticate()     ──► source DB (JSON-RPC)
+     → services/json_rpc_client.py: model_exists()
+     → services/json_rpc_client.py: fields_get()       ──► source DB (JSON-RPC)
      → services/field_mapper.py: build_field_lines()
-     → заповнює wizard/migration_field_line
+     → wizard: field_line_ids, counts, source_session_id
      → state = 'analysed'
      │
      │ натиск «Завантажити»
      ▼
 [wizard/migration_wizard.action_import()]
-     → services/record_importer.py: run()
-          ► loop батчами по 100:
-               → rpc_client.search_read()        ←── source DB
-               → _prepare_values()
-                    → _resolve_many2one()  → env[comodel].search / create
-                    → _resolve_many2many()
-               → env[model]._find_local_record(id)
-               → .write() або .create()
-               → wizard.progress += delta
-               → перевірка wizard._stop_requested
+     → скидає stats, state = 'loading'
+     → повертає form reload
      │
-     │ полінг кожну 1с
+     │ Owl-компонент виявляє state='loading' → onWillStart()
      ▼
-[JS: MigrationProgressWidget]
-     → GET /vd_migration/progress/<wizard_id>
-          ← controllers/migration_controller.py
-     → оновлює полоску / лічильник / статус
-     → кнопка «Зупинити» → POST /vd_migration/stop/<wizard_id>
+[JS: MigrationProgressWidget.startImport()]   ← ФРОНТЕНД ОРКЕСТРУЄ
+     │
+     │  ┌─────────────────── цикл (offset=0) ─────────────────────┐
+     │  │                                                           │
+     │  │  POST /vd_migration/fetch_batch                          │
+     │  │    → controllers/migration_controller.py                 │
+     │  │    → services/json_rpc_client.search_read(offset, 100)  │
+     │  │    ←── source DB (JSON-RPC)                             │
+     │  │    → { records: [...] }                                  │
+     │  │                                                           │
+     │  │  if records.length == 0 → break ─────────────────────► │
+     │  │                                                           │
+     │  │  POST /vd_migration/process_batch                        │
+     │  │    → services/record_importer.process_batch()            │
+     │  │         → _prepare_values() per record                   │
+     │  │              → _resolve_many2one/many2many               │
+     │  │         → env[model].search(id) → write/create           │
+     │  │    → { created, updated, errors }                        │
+     │  │                                                           │
+     │  │  offset += records.length                                │
+     │  │  Оновити progress bar (без polling!)                     │
+     │  │  Перевірити this._stopped                                │
+     │  └────────────────────────────────────────────────────────┘
+     │
+     │  POST /vd_migration/finalize { state, stats }
+     ▼
+[wizard.state = 'done'/'stopped', stats збережено]
 ```
 
 ---
@@ -392,11 +542,13 @@ ir.model.access.csv:
 
 | Задача | Рішення |
 |---|---|
-| TransientModel ’ы окремо від моделей | Папка `wizard/` (правило `.rules/odoo-conventions.md`) |
-| Прогрес у реальному часі | Owl 2 компонент + polling JSON |
-| Зупинка | Флаг `_stop_requested` в wizard + POST endpoint |
-| Пароль не зберігається | `TransientModel` — чиститься автоматично |
-| Many2one / Many2many | `_resolve_many2one` з кешем локальних ID |
-| Батчинг | `BATCH_SIZE = 100` у `RecordImporter` |
+| Протокол зв'язку з джерелом | **JSON-RPC 2.0** через `urllib.request` (stdlib, без deps) |
+| TransientModel'и окремо | Папка `wizard/` (правило `.rules/odoo-conventions.md`) |
+| Прогрес у реальному часі | **Frontend-driven** — Owl 2 компонент оркеструє цикл, без polling |
+| Цикл по батчах | На **фронтенді**: читати до `records.length == 0` |
+| Зупинка | `this._stopped = true` у JS + `POST /finalize` з state='stopped' |
+| CORS | Відсутній — фронтенд читає через **бекенд-проксі** (`fetch_batch`) |
+| Пароль не зберігається | `TransientModel` — чиститься Odoo автоматично |
+| Many2one / Many2many | `_resolve_many2one` з кешем локальних ID (бекенд) |
+| Батчинг | Рівно 100 записів за один `fetch_batch` запит |
 | Бізнес-логіка окремо | `services/` — чисті класи без ORM-залежності |
-| Безпека | `auth='user'` + група доступу в controller |

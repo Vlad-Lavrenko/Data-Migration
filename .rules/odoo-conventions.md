@@ -35,7 +35,7 @@
 ### Правило розподілу моделей:
 - `models/` — містить **тільки** `models.Model` та `models.AbstractModel`
 - `wizard/` — містить **тільки** `models.TransientModel`
-- Якщо модуль містить візарди — папка `wizard/` є обов’язковою
+- Якщо модуль містить візарди — папка `wizard/` є обов'язковою
 - `__init__.py` модуля імпортує обидва: `from . import models, wizard`
 
 ## Моделі
@@ -54,7 +54,7 @@
 - View для візарда зберігати в `views/` (не в `wizard/`)
 
 ## Security
-- Кожна модель обов’язково має запис у `security/ir.model.access.csv`
+- Кожна модель обов'язково має запис у `security/ir.model.access.csv`
 - Групи доступу визначати у `security/security_groups.xml`
 - Формат CSV: `id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink`
 
@@ -63,8 +63,18 @@
 - JSON-відповідь через `http.Response` з `content_type='application/json'`
 - Обробляти виключення та повертати структурований JSON з `error`
 
-## Міграційні скрипти (RPC)
-- Завжди перевіряти дублі перед `create`
-- Логувати кожен створений/пропущений запис
-- Використовувати батчинг: по 100 записів за раз
-- Зберігати результат у log-файл поруч зі скриптом
+## Зв'язок з зовнішнім Odoo (JSON-RPC)
+- Використовувати **JSON-RPC 2.0** через `urllib.request` + `json` (тільки stdlib, без зовнішніх залежностей)
+- Аутентифікація: `POST /web/session/authenticate` → зберігати `session_id`
+- Виклики моделей: `POST /web/dataset/call_kw` з Cookie `session_id`
+- Читання даних — батчами по **100 записів** (`search_read` з `offset` + `limit`)
+- Цикл по батчах завершується коли `len(records) == 0`
+- Логувати кожну RPC-операцію через `_logger`
+- Обробляти: `socket.timeout`, `URLError`, JSON `error` поле → `UserError`
+- Зберігати `session_id` тільки в `TransientModel` (пам'ять, не в БД)
+
+## Frontend-driven процеси
+- Якщо процес потребує прогресу в реальному часі — виконувати цикл на **фронтенді** (Owl 2)
+- Фронтенд читає батчи через бекенд-**проксі** (уникати прямих CORS-запитів)
+- Зупинка циклу — через локальний JS-прапор (`this._stopped`), без polling
+- Після завершення — notify бекенд через `POST /finalize`
