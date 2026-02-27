@@ -1,0 +1,8 @@
+# RPC клієнти
+requests==2.31.0
+
+# Для XML-RPC (вбудований у Python, але на випадок додаткових утиліт)
+# xmlrpc.client — stdlib
+
+# Опціонально: OdooRPC (JSON-RPC клієнт)
+# odoorpc==0.9.0
