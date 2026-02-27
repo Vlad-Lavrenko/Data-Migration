@@ -16,7 +16,7 @@
 ```
 
 ## Моделі
-- Префікс назви моделі відповідно до модуля: `dm_` (data migration)
+- Префікс назви моделі відповідно до модуля: `vd_` (data migration)
 - Завжди вказувати `_description`
 - Завжди вказувати `string=` та `help=` для полів
 - `sudo()` використовувати тільки з коментарем `# sudo: <reason>`
@@ -24,7 +24,7 @@
 
 ## View
 - XML id формат: `<module>.<type>_<model>_<suffix>`
-  Приклад: `dm_migration.view_partner_migration_form`
+  Приклад: `vd_migration.view_partner_migration_form`
 - Завжди вказувати `string=` у `<record>`
 - Tree view — мінімум полів (до 6)
 - Form view — групувати поля через `<group>`
