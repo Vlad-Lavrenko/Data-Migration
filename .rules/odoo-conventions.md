@@ -15,6 +15,29 @@
 }
 ```
 
+## Структура папок модуля
+
+Стандартна структура:
+```
+<module_name>/
+├── __init__.py
+├── __manifest__.py
+├── models/          # Звичайні моделі (Model, AbstractModel)
+│   └── __init__.py
+├── wizard/          # Тільки TransientModel-класи
+│   └── __init__.py
+├── views/
+├── controllers/
+├── security/
+└── static/
+```
+
+### Правило розподілу моделей:
+- `models/` — містить **тільки** `models.Model` та `models.AbstractModel`
+- `wizard/` — містить **тільки** `models.TransientModel`
+- Якщо модуль містить візарди — папка `wizard/` є обов’язковою
+- `__init__.py` модуля імпортує обидва: `from . import models, wizard`
+
 ## Моделі
 - Префікс назви моделі відповідно до модуля: `vd_` (data migration)
 - Завжди вказувати `_description`
@@ -28,9 +51,10 @@
 - Завжди вказувати `string=` у `<record>`
 - Tree view — мінімум полів (до 6)
 - Form view — групувати поля через `<group>`
+- View для візарда зберігати в `views/` (не в `wizard/`)
 
 ## Security
-- Кожна модель обов'язково має запис у `security/ir.model.access.csv`
+- Кожна модель обов’язково має запис у `security/ir.model.access.csv`
 - Групи доступу визначати у `security/security_groups.xml`
 - Формат CSV: `id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink`
 
