@@ -1,0 +1,26 @@
+.vd-migration-progress {
+    min-width: 380px;
+    max-width: 680px;
+}
+
+.vd-migration-progress .progress {
+    border-radius: 6px;
+    background-color: #e9ecef;
+}
+
+.vd-migration-progress .progress-bar {
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: width 0.12s ease;
+}
+
+.vd-migration-progress .vd-migration-label {
+    font-size: 0.95rem;
+    color: #495057;
+}
+
+.vd-migration-progress .vd-migration-stats .badge {
+    font-size: 0.85rem;
+    padding: 0.4em 0.8em;
+    border-radius: 0.4rem;
+}

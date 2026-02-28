@@ -27,10 +27,9 @@ Features:
     ],
     'assets': {
         'web.assets_backend': [
-            # M7: Owl progress widget
-            # 'vd_data_migration/static/src/js/migration_progress_widget.js',
-            # 'vd_data_migration/static/src/xml/migration_progress_widget.xml',
-            # 'vd_data_migration/static/src/css/migration_progress_widget.css',
+            'vd_data_migration/static/src/js/migration_progress_widget.js',
+            'vd_data_migration/static/src/xml/migration_progress_widget.xml',
+            'vd_data_migration/static/src/css/migration_progress_widget.css',
         ],
     },
 }

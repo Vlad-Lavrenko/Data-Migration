@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="vd_data_migration.MigrationProgressWidget">
+        <div class="vd-migration-progress py-2">
+
+            <!-- Idle: import not started -->
+            <t t-if="state.status === 'idle'">
+                <span class="text-muted fst-italic">
+                    Запустіть імпорт для відображення прогресу.
+                </span>
+            </t>
+
+            <t t-else="">
+
+                <!-- Progress bar -->
+                <div class="progress mb-2" style="height: 22px;">
+                    <div class="progress-bar progress-bar-striped"
+                         t-att-class="{
+                             'progress-bar-animated': state.status === 'running',
+                             'bg-success':            state.status === 'done',
+                             'bg-warning':            state.status === 'stopped',
+                             'bg-danger':             state.status === 'error'
+                         }"
+                         role="progressbar"
+                         t-att-style="'width: ' + state.progress + '%; min-width: 2.5em;'"
+                         t-att-aria-valuenow="state.progress"
+                         aria-valuemin="0"
+                         aria-valuemax="100">
+                        <t t-out="state.progress"/>%
+                    </div>
+                </div>
+
+                <!-- Record counter (FR-11) -->
+                <div class="vd-migration-label mb-1 fw-semibold">
+                    <t t-out="state.label"/>
+                </div>
+
+                <!-- Batch counter (FR-11) -->
+                <div class="text-muted small mb-2">
+                    Пакетів завантажено:
+                    <strong><t t-out="state.batchesLoaded"/></strong>
+                </div>
+
+                <!-- Status label + Stop button (FR-10) -->
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <span t-att-class="statusClass">
+                        <t t-out="statusLabel"/>
+                    </span>
+                    <button t-if="state.status === 'running'"
+                            class="btn btn-sm btn-warning"
+                            t-on-click="stopImport">
+                        ⏹ Зупинити
+                    </button>
+                </div>
+
+                <!-- Final statistics (FR-11) -->
+                <t t-if="state.status === 'done' or state.status === 'stopped'">
+                    <div class="vd-migration-stats d-flex gap-2 flex-wrap">
+                        <span class="badge text-bg-success fs-6">
+                            ✔ Створено: <t t-out="state.stats.created"/>
+                        </span>
+                        <span class="badge text-bg-primary fs-6">
+                            ↻ Оновлено: <t t-out="state.stats.updated"/>
+                        </span>
+                        <span class="badge text-bg-danger fs-6">
+                            ✗ Помилок: <t t-out="state.stats.errors"/>
+                        </span>
+                    </div>
+                </t>
+
+                <!-- Error state -->
+                <t t-if="state.status === 'error'">
+                    <div class="alert alert-danger py-2 px-3 mt-2">
+                        Помилка під час імпорту. Перевірте журнал сервера.
+                    </div>
+                </t>
+
+            </t>
+        </div>
+    </t>
+
+</templates>

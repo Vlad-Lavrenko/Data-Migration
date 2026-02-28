@@ -9,35 +9,36 @@
 
 ---
 
-## Milestone 0–5 — виконано [x]
-
----
-
-## Milestone 6: HTTP-контролер
-
-- [x] `controllers/migration_controller.py` — `MigrationController`
-- [x] `POST /vd_migration/fetch_batch` — `{ records, total }`, тільки `include=True AND source_exists=True` поля
-- [x] `POST /vd_migration/process_record` — `{ created, updated, errors }`, статистика на фронтенді
-- [x] `POST /vd_migration/finalize` — зберігає `state` + `stats` з frontend
-- [x] `POST /vd_migration/stop/<wizard_id>` — екстренна зупинка (запасний)
-- [x] Всі маршрути `auth='user'`, `type='json'`, помилки → `{ error }`
-- [x] `_build_rpc_client()` — відновлює `_session_id` з `wizard.source_session_id`
-- [x] `controllers/__init__.py` — імпорт активовано
+## Milestone 0–6 — виконано [x]
 
 ---
 
 ## Milestone 7: JS Owl-компонент (`MigrationProgressWidget`)
 
-- [ ] `static/src/js/migration_progress_widget.js` — Owl 2, подвійний цикл
-- [ ] `static/src/xml/migration_progress_widget.xml` — шаблон
-- [ ] `static/src/css/migration_progress_widget.css` — стилі
-- [ ] Зареєструвати у `__manifest__.py` → `web.assets_backend`
+- [x] `static/src/js/migration_progress_widget.js`
+  - [x] Owl 2 `Component`, `useState`, `onMounted`
+  - [x] `startImport()` — подвійний цикл `outerLoop` (batch) / inner (per-record)
+  - [x] `stopImport()` — `this._stopped = true`, перевірка на початку обох циклів (FR-10)
+  - [x] `_updateProgress()` — оновлення після кожного запису (FR-11)
+  - [x] Resume з `start_batch_number`: `offset = (startBatch - 1) * 100`
+  - [x] Ініціалізація `state` з полів wizard (для відображення попереднього результату)
+  - [x] Getters `statusLabel`, `statusClass`
+  - [x] `registry.category("fields").add("vd_migration_progress", ...)`
+- [x] `static/src/xml/migration_progress_widget.xml`
+  - [x] Progress bar (анімована при `running`)
+  - [x] Лічильник записів і пакетів
+  - [x] Кнопка «Зупинити» (visible при `running`)
+  - [x] Фінальна статистика badges (visible при `done`/`stopped`)
+  - [x] Alert при `error`
+- [x] `static/src/css/migration_progress_widget.css` — стилі
+- [x] `__manifest__.py` — assets розкоментовано
 
 ---
 
 ## Milestone 8: Інтеграційне тестування
 
-- [ ] Встановити модуль на Odoo 18.0 інстанс
+- [ ] Встановити модуль: `odoo-bin -i vd_data_migration -d <db>`
+- [ ] Перевірити scaffolding: модуль з’являється в Apps без помилок
 - [ ] Повний цикл: аналіз → завантаження → зупинка → відновлення → видалення
 - [ ] Хмарні сценарії: невірні credentials, недоступний сервер, модель не існує
 
