@@ -136,6 +136,11 @@ class MigrationWizard(models.TransientModel):
             4. Fetch record counts (source + local target).
             5. Build field mapping lines via FieldMapper.
             6. Write results to the wizard and set state='analysed'.
+            7. Return form reload to keep the dialog open.
+
+        Returns:
+            dict: ir.actions.act_window that reopens this wizard record
+                  so the dialog stays open with updated field_line_ids.
 
         Raises:
             UserError: On missing fields, unreachable server, or unknown model.
@@ -170,7 +175,10 @@ class MigrationWizard(models.TransientModel):
             'action_analyse: model=%s source=%d target=%d fields=%d',
             model_name, count_source, count_target, len(lines),
         )
-        return True
+
+        # Return form reload — keeps the dialog open with updated data.
+        # Returning True or None would close a target='new' dialog.
+        return self._form_reload_action()
 
     def action_import(self):
         """Start the import process (FR-06 backend part).
@@ -200,15 +208,7 @@ class MigrationWizard(models.TransientModel):
 
         _logger.info('action_import: wizard=%s state=loading', self.id)
 
-        view_id = self.env.ref('vd_data_migration.view_vd_migration_wizard_form').id
-        return {
-            'type':      'ir.actions.act_window',
-            'res_model': self._name,
-            'res_id':    self.id,
-            'view_mode': 'form',
-            'target':    'new',
-            'view_id':   view_id,
-        }
+        return self._form_reload_action()
 
     def action_delete(self):
         """Delete all records of the target model (FR-07).
@@ -249,6 +249,25 @@ class MigrationWizard(models.TransientModel):
         }
 
     # ── Private helpers ───────────────────────────────────────────────
+
+    def _form_reload_action(self) -> dict:
+        """Return an act_window action that reopens this wizard in a dialog.
+
+        Used by action_analyse and action_import to keep the dialog open
+        after writing data to the TransientModel record.
+
+        Returns:
+            dict: ir.actions.act_window pointing to this record.
+        """
+        view_id = self.env.ref('vd_data_migration.view_vd_migration_wizard_form').id
+        return {
+            'type':      'ir.actions.act_window',
+            'res_model': self._name,
+            'res_id':    self.id,
+            'view_mode': 'form',
+            'target':    'new',
+            'view_id':   view_id,
+        }
 
     def _get_rpc_client(self) -> JsonRpcClient:
         """Create and return a JsonRpcClient.
