@@ -45,18 +45,18 @@
 > Мета: описати структуру даних візарда
 
 ### 2.1 `vd.migration.field.line`
-- [ ] Поля: `wizard_id`, `field_name`, `field_label`, `field_type`, `source_exists`, `include`, `comodel`
-- [ ] Оновити `wizard/__init__.py` (вже імпортується)
-- [ ] Перевірити запис у `security/ir.model.access.csv`
+- [x] Поля: `wizard_id`, `field_name`, `field_label`, `field_type`, `source_exists`, `include`, `comodel`
+- [x] `wizard/__init__.py` — імпорт присутній
+- [x] Запис у `security/ir.model.access.csv` вже єсть
 
 ### 2.2 `vd.migration.wizard`
-- [ ] Поля підключення: `source_url`, `source_db`, `source_login`, `source_password`, `source_session_id`
-- [ ] Поля вибору: `target_model_id`, `record_count_source`, `record_count_target`
-- [ ] Поле початку: `start_batch_number` (Integer, default=1)
-- [ ] Поля прогресу: `progress`, `progress_label`, `state` (draft/analysed/loading/done/stopped)
-- [ ] Поля статистики: `stats_created`, `stats_updated`, `stats_errors`
-- [ ] One2many: `field_line_ids`
-- [ ] Порожні заголовки методів: `action_analyse`, `action_import`, `action_delete`, `_get_rpc_client`
+- [x] Поля підключення: `source_url`, `source_db`, `source_login`, `source_password`, `source_session_id`
+- [x] Поля вибору: `target_model_id`, `record_count_source`, `record_count_target`
+- [x] Поле початку: `start_batch_number` (Integer, default=1)
+- [x] Поля прогресу: `progress`, `progress_label`, `state` (draft/analysed/loading/done/stopped)
+- [x] Поля статистики: `stats_created`, `stats_updated`, `stats_errors`
+- [x] One2many: `field_line_ids`
+- [x] Порожні заголовки методів: `action_analyse`, `action_import`, `action_delete`, `_get_rpc_client`
 
 ---
 
