@@ -1,6 +1,6 @@
 # План розробки модуля `vd_data_migration`
 
-> Базується на: `docs/requirements.md` v0.5 | `docs/architecture.md` v0.5
+> Базується на: `docs/requirements.md` v0.5 | `docs/architecture.md` v0.6
 
 ## Статуси
 - `[ ]` — не розпочато
@@ -30,11 +30,11 @@
 - [x] `__init__.py` — `from . import models, wizard, services, controllers`
 - [x] `models/__init__.py` — порожньо, готово до розширення
 - [x] `wizard/__init__.py` + stub-файли `migration_wizard.py`, `migration_field_line.py`
+- [x] `wizard/migration_wizard_views.xml` — placeholder form view (у `wizard/`, не в `views/`)
 - [x] `services/__init__.py` — placeholder
 - [x] `controllers/__init__.py` — placeholder
 - [x] `security/security_groups.xml` — `group_migration_user` + `group_migration_admin`
 - [x] `security/ir.model.access.csv` — базові права (wizard + field_line)
-- [x] `views/migration_wizard_views.xml` — placeholder form
 - [x] `views/menus.xml` — пункт меню «Міграція» + `ir.actions.act_window`
 - [ ] Перевірити: модуль встановлюється без помилок (`odoo-bin -i vd_data_migration`)
 
@@ -52,8 +52,8 @@
 ### 2.2 `vd.migration.wizard`
 - [ ] Поля підключення: `source_url`, `source_db`, `source_login`, `source_password`, `source_session_id`
 - [ ] Поля вибору: `target_model_id`, `record_count_source`, `record_count_target`
-- [ ] Поле початку: `start_batch_number` (Integer, default=1, string='Початковий номер пакету')
-- [ ] Поля прогресу: `progress`, `progress_label`, `state` (Selection: draft/analysed/loading/done/stopped)
+- [ ] Поле початку: `start_batch_number` (Integer, default=1)
+- [ ] Поля прогресу: `progress`, `progress_label`, `state` (draft/analysed/loading/done/stopped)
 - [ ] Поля статистики: `stats_created`, `stats_updated`, `stats_errors`
 - [ ] One2many: `field_line_ids`
 - [ ] Порожні заголовки методів: `action_analyse`, `action_import`, `action_delete`, `_get_rpc_client`
@@ -65,29 +65,17 @@
 > Мета: реалізувати бізнес-логіку без ORM-залежності
 
 ### 3.1 `JsonRpcClient` — `services/json_rpc_client.py`
-- [ ] `__init__`: `url`, `db`, `login`, `password`, `_session_id = None`, `_uid = None`
-- [ ] `authenticate()` — `POST /web/session/authenticate`, зберігає `_session_id`, кидає `UserError` при невдачі
-- [ ] `_call_kw()` — `POST /web/dataset/call_kw` з Cookie header, розбирає JSON-відповідь
-- [ ] `model_exists()` — `search_count` на `ir.model`
-- [ ] `fields_get()` — повертає `dict` з атрибутами `string`, `type`, `relation`
-- [ ] `search_count()` — повертає `int`
-- [ ] `search_read()` — батчинг з `offset` + `limit`
-- [ ] Обробка помилок: `socket.timeout`, `URLError`, JSON error field → `UserError`
+- [ ] `authenticate()`, `_call_kw()`, `model_exists()`, `fields_get()`, `search_count()`, `search_read()`
+- [ ] Обробка помилок: `socket.timeout`, `URLError`, JSON error → `UserError`
 - [ ] `_logger.info/error` для всіх RPC-операцій
 
 ### 3.2 `FieldMapper` — `services/field_mapper.py`
-- [ ] `build_field_lines()` — поля джерела (`rpc.fields_get`) + поточної БД (`env[model]._fields`)
-- [ ] Зіставлення: `source_exists = field_name in source_fields`
-- [ ] `include = True` для всіх; `one2many` → `include = False`
-- [ ] Повертає `list[dict]` для запису через `field_line_ids`
+- [ ] `build_field_lines()` — поля джерела + поточної БД, зіставлення, `include`
 
 ### 3.3 `RecordImporter` — `services/record_importer.py`
-- [ ] `process_record(model_name, record, field_lines)` — повертає `{created: 0|1, updated: 0|1, errors: 0|1}`
-- [ ] `_prepare_values(record, field_lines)` — розбір полів за типом
-- [ ] `_find_local_record(model_name, source_id)` — `env[model].search([('id','=',source_id)])`
-- [ ] `_resolve_many2one(comodel, source_id)` — пошук/створення за FR-08
-- [ ] `_resolve_many2many(comodel, source_ids)` — список → `[(6, 0, [...])]` за FR-09
-- [ ] Логування кожного запису: `_logger.debug('Record %s: %s', record_id, status)`
+- [ ] `process_record()`, `_prepare_values()`, `_find_local_record()`
+- [ ] `_resolve_many2one()` (FR-08), `_resolve_many2many()` (FR-09)
+- [ ] `_logger.debug` для кожного запису
 
 ---
 
@@ -96,39 +84,28 @@
 > Мета: підключити сервіси до UI-дій
 
 ### 4.1 `action_analyse()`
-- [ ] `_get_rpc_client()` → `JsonRpcClient(url, db, login, password)`
-- [ ] `rpc.authenticate()` → зберегти `source_session_id` у wizard
-- [ ] `rpc.model_exists()` → `UserError` якщо ні
-- [ ] `rpc.search_count()` → `record_count_source`
-- [ ] `env[model].search_count([])` → `record_count_target`
-- [ ] `FieldMapper.build_field_lines()` → очистити + записати `field_line_ids`
+- [ ] `_get_rpc_client()` → authenticate → model_exists → search_count → FieldMapper
 - [ ] `state = 'analysed'`
 
 ### 4.2 `action_import()`
-- [ ] Перевірити `state == 'analysed'` → `UserError` якщо ні
-- [ ] Скинути `stats_created = stats_updated = stats_errors = 0`
-- [ ] `state = 'loading'`, `progress = 0`
-- [ ] Повернути `{'type': 'ir.actions.act_window', 'res_id': self.id, ...}` (form reload)
+- [ ] Перевірка state, скидання stats, `state = 'loading'`, form reload
 
 ### 4.3 `action_delete()`
-- [ ] Перевірити `target_model_id` заповнено
-- [ ] Повернути confirm-діалог
-- [ ] `env[model].search([]).unlink()`
-- [ ] `record_count_target = 0`
+- [ ] Confirm-діалог → `unlink()` → `record_count_target = 0`
 
 ---
 
 ## Milestone 5: Form view візарда
 
-> Мета: створити повний UI згідно `docs/architecture.md` розділ 6
+> Мета: замінити placeholder на повну форму згідно `docs/architecture.md` розділ 6
 
-- [ ] `views/migration_wizard_views.xml` — замінити placeholder на повну форму:
+- [ ] `wizard/migration_wizard_views.xml` — замінити placeholder на повну форму:
   - [ ] Блок «Підключення до джерела» (4 поля)
-  - [ ] Блок «Модель та параметри» (`target_model_id`, read-only лічильники, `start_batch_number`)
+  - [ ] Блок «Модель та параметри» (`target_model_id`, лічильники, `start_batch_number`)
   - [ ] Кнопка «Аналізувати» (`btn-primary`)
   - [ ] Таблиця `field_line_ids` (6 колонок, `invisible` при `state='draft'`)
   - [ ] Поле `progress` з `widget="vd_migration_progress"` (invisible по state)
-  - [ ] Footer: «Завантажити» (invisible якщо не analysed), «Видалити», «Закрити»
+  - [ ] Footer: «Завантажити», «Видалити», «Закрити»
 - [ ] Перевірити view візуально в Odoo UI
 
 ---
@@ -138,21 +115,11 @@
 > Мета: надати ендпоінти для Owl-компонента
 
 - [ ] `controllers/migration_controller.py`
-- [ ] `POST /vd_migration/fetch_batch`
-  - [ ] Читає `wizard.source_session_id`, `field_line_ids` (include=True)
-  - [ ] Викликає `JsonRpcClient.search_read(offset, 100)`
-  - [ ] Повертає `{ records: [...], total: N }`
-- [ ] `POST /vd_migration/process_record`
-  - [ ] Читає wizard + field_line_ids
-  - [ ] Викликає `RecordImporter.process_record(model, record, field_lines)`
-  - [ ] Повертає `{ created: 0|1, updated: 0|1, errors: 0|1 }`
-  - [ ] При винятку: повертає `{ created: 0, updated: 0, errors: 1 }` (не кидає 500)
-- [ ] `POST /vd_migration/finalize`
-  - [ ] Оновлює `wizard.state`, `stats_*`, `progress`
-  - [ ] Повертає `{ ok: True }`
+- [ ] `POST /vd_migration/fetch_batch` — `{ records, total }`
+- [ ] `POST /vd_migration/process_record` — `{ created, updated, errors }`
+- [ ] `POST /vd_migration/finalize` — `{ ok: True }`
 - [ ] `POST /vd_migration/stop/<wizard_id>` — запасний
-- [ ] Всі маршрути з `auth='user'`
-- [ ] Обробка помилок: wizard не знайдено → `{ error: 'not_found' }`
+- [ ] Всі маршрути з `auth='user'`, помилки → JSON `{ error }`
 
 ---
 
@@ -160,53 +127,18 @@
 
 > Мета: реалізувати оркестратор міграції на фронтенді з per-record прогресом
 
-- [ ] `static/src/js/migration_progress_widget.js`
-  - [ ] Owl 2 компонент, `useState` для `progress`, `label`, `status`, `batchesLoaded`, `currentBatchNo`, `stats`
-  - [ ] `onWillStart()` — авто-старт якщо `state == 'loading'`
-  - [ ] `startImport()` — ініціалізація: `offset = (start_batch_number − 1) × 100`
-  - [ ] Зовнішній цикл `while (!this._stopped)` — по батчах
-  - [ ] `_fetchBatch()` → `POST /vd_migration/fetch_batch`
-  - [ ] Внутрішній цикл `for (const record of records)` — по записах
-  - [ ] Перевірка `this._stopped` на початку внутрішнього циклу (`break outer`)
-  - [ ] `_processRecord()` → `POST /vd_migration/process_record`
-  - [ ] Оновлення `state.progress` та `state.label` **після кожного запису**
-  - [ ] Після завершення батчу: `state.batchesLoaded += 1`, `state.currentBatchNo += 1`
-  - [ ] `onStop()` — `this._stopped = true`
-  - [ ] `_finalize()` → `POST /vd_migration/finalize`
-  - [ ] `_mergeStats()` — накопичення created/updated/errors
-  - [ ] Реєстрація: `registry.category('fields').add('vd_migration_progress', ...)`
-- [ ] `static/src/xml/migration_progress_widget.xml`
-  - [ ] Полоска з `progress-fill` (ширина через `t-attf-style`)
-  - [ ] Лічильник записів `X / N записів`
-  - [ ] Бейдж статусу
-  - [ ] Кнопка «Зупинити» (тільки при `status='loading'`)
-  - [ ] **Лічильник пакетів** під прогрес-баром: `Пакетів завантажено: X (поточний №Y)`
-  - [ ] Блок фінальної статистики (при `done`/`stopped`)
-- [ ] `static/src/css/migration_progress_widget.css` — стилі полоски та лічильника
-- [ ] Розкоментувати assets у `__manifest__.py` → `web.assets_backend`
-- [ ] Перевірити: прогрес оновлюється **після кожного запису** без перезавантаження
-- [ ] Перевірити: «Зупинити» зупиняє після **поточного запису** (не батчу)
+- [ ] `static/src/js/migration_progress_widget.js` — Owl 2, подвійний цикл
+- [ ] `static/src/xml/migration_progress_widget.xml` — шаблон
+- [ ] `static/src/css/migration_progress_widget.css` — стилі
+- [ ] Зареєструвати у `__manifest__.py` → `web.assets_backend`
 
 ---
 
 ## Milestone 8: Інтеграційне тестування
 
-> Мета: перевірити повний цикл з UI
-
 - [ ] Встановити модуль на Odoo 18.0 інстанс
-- [ ] Відкрити меню «Міграція» — перевірити візард
-- [ ] Ввести дані підключення, обрати модель → «Аналізувати»
-  - [ ] Таблиця полів заповнена, `source_exists` правильно
-- [ ] «Завантажити» (start_batch_number=1) → прогрес-бар оновлюється після кожного запису
-- [ ] Перевірити лічильник пакетів під прогрес-баром
-- [ ] «Зупинити» → зупиняється після поточного **запису**
-- [ ] Перезапустити з start_batch_number=3 → offset починається з 200
-- [ ] «Видалити» → діалог підтвердження + unlink
-- [ ] Хмарні сценарії:
-  - [ ] Невірні credentials → UserError «Невірний логін/пароль»
-  - [ ] Недоступний сервер → UserError «Сервер недоступний»
-  - [ ] Модель не існує в source → UserError
-  - [ ] Many2one запис відсутній в target → створюється з `name="<{id}>"`
+- [ ] Повний цикл: аналіз → завантаження → зупинка → відновлення → видалення
+- [ ] Хмарні сценарії: невірні credentials, недоступний сервер, модель не існує
 
 ---
 
@@ -220,14 +152,12 @@
 
 ## MVP (мінімально робочий модуль)
 
-Модуль вважається готовим після завершення Milestone 1–7:
-
 | Milestone | Що дає |
 |---|---|
 | M1 | Модуль встановлюється (`vd_data_migration/` у корені репо) |
 | M2 | Моделі візарда описані (включно з `start_batch_number`) |
 | M3 | JSON-RPC, зіставлення полів, per-record обробка |
 | M4 | Три кнопки працюють |
-| M5 | UI візарда готовий |
+| M5 | UI візарда готовий (`wizard/migration_wizard_views.xml`) |
 | M6 | Ендпоінти для фронтенду готові |
 | M7 | Прогрес по запису + лічильник пакетів + оркестрація на фронтенді |

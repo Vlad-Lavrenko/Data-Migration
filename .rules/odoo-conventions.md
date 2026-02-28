@@ -31,19 +31,23 @@ vd_data_migration/
 ├── __manifest__.py
 ├── models/          # Звичайні моделі (Model, AbstractModel)
 │   └── __init__.py
-├── wizard/          # Тільки TransientModel-класи
-│   └── __init__.py
-├── views/
+├── wizard/          # Все що стосується візарда: TransientModel + XML views
+│   ├── __init__.py
+│   ├── <name>_wizard.py
+│   └── <name>_wizard_views.xml
+├── views/           # Тільки menus.xml та views незалежних від wizard моделей
+│   └── menus.xml
 ├── controllers/
 ├── security/
 └── static/
 ```
 
-### Правило розподілу моделей:
+### Правило розподілу файлів:
 - `models/` — містить **тільки** `models.Model` та `models.AbstractModel`
-- `wizard/` — містить **тільки** `models.TransientModel`
-- Якщо модуль містить візарди — папка `wizard/` є обов'язковою
-- `__init__.py` модуля імпортує обидва: `from . import models, wizard`
+- `wizard/` — містить **все що стосується візарда**: `TransientModel`-класи **та** XML views для них
+- `views/` — містить `menus.xml` та views моделей **не-wizard** (якщо є `models/`)
+- Якщо модуль містить лише wizard — `views/` містить тільки `menus.xml`
+- `__init__.py` модуля імпортує: `from . import models, wizard, services, controllers`
 
 ## Моделі
 - Префікс назви моделі відповідно до модуля: `vd_` (data migration)
@@ -54,11 +58,12 @@ vd_data_migration/
 
 ## View
 - XML id формат: `<module>.<type>_<model>_<suffix>`
-  Приклад: `vd_migration.view_partner_migration_form`
+  Приклад: `vd_data_migration.view_migration_wizard_form`
 - Завжди вказувати `string=` у `<record>`
 - Tree view — мінімум полів (до 6)
 - Form view — групувати поля через `<group>`
-- View для візарда зберігати в `views/` (не в `wizard/`)
+- **View для wizard** зберігати в `wizard/` (не в `views/`)
+- `menus.xml` завжди в `views/`
 
 ## Security
 - Кожна модель обов'язково має запис у `security/ir.model.access.csv`

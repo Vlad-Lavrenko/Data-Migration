@@ -19,16 +19,16 @@
 2. Згенерувати `__manifest__.py` згідно `.rules/odoo-conventions.md`
 3. Створити `models/__init__.py` (порожньо, готово до розширення)
 4. Якщо `has_wizard=True`:
-   - Створити `wizard/__init__.py` та `wizard/<name>_wizard.py` з TransientModel stub
+   - Створити `wizard/__init__.py`
+   - Створити `wizard/<name>_wizard.py` з TransientModel stub
+   - Створити `wizard/<name>_wizard_views.xml` — placeholder form view
    - `__init__.py` модуля: `from . import models, wizard, services, controllers`
 5. Якщо `has_wizard=False`:
    - `__init__.py` модуля: `from . import models`
 6. Створити `services/__init__.py` та `controllers/__init__.py` (порожні, з коментарями)
-7. Створити `views/<name>_views.xml` — placeholder form view
-8. Якщо `has_wizard=True` — замість `<name>_views.xml` використати `<name>_wizard_views.xml`
-9. Створити `views/menus.xml` — menuitem + ir.actions.act_window
-10. Створити `security/security_groups.xml` з групою доступу
-11. Створити `security/ir.model.access.csv` з базовими правами
+7. Створити `views/menus.xml` — menuitem + ir.actions.act_window
+8. Створити `security/security_groups.xml` з групою доступу
+9. Створити `security/ir.model.access.csv` з базовими правами
 
 ## Шаблон TransientModel stub (`wizard/`)
 ```python
@@ -52,15 +52,15 @@ class MyWizard(models.TransientModel):
 ├── __manifest__.py
 ├── models/
 │   └── __init__.py      # placeholder
-├── wizard/
+├── wizard/              # ВСЕ що стосується wizard: py + xml views
 │   ├── __init__.py
-│   └── <name>_wizard.py
+│   ├── <name>_wizard.py
+│   └── <name>_wizard_views.xml
 ├── services/
 │   └── __init__.py      # placeholder (filled in M3)
 ├── controllers/
 │   └── __init__.py      # placeholder (filled in M6)
-├── views/
-│   ├── <name>_wizard_views.xml
+├── views/               # тільки menus.xml
 │   └── menus.xml
 ├── security/
 │   ├── security_groups.xml
