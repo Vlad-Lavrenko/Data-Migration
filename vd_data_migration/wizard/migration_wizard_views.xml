@@ -1,27 +1,90 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!--
-        Form view for vd.migration.wizard.
-        Placeholder — full UI is built in M5 after all fields (M2)
-        and services (M3/M4) are implemented.
-    -->
     <record id="view_vd_migration_wizard_form" model="ir.ui.view">
         <field name="name">vd.migration.wizard.form</field>
         <field name="model">vd.migration.wizard</field>
         <field name="arch" type="xml">
             <form string="Міграція даних">
-                <sheet>
-                    <div class="o_form_sheet_title">
-                        <h2>VD Data Migration</h2>
-                    </div>
-                    <p class="text-muted">
-                        Повний інтерфейс візарда буде додано в Milestone 2–5.
-                    </p>
-                </sheet>
+
+                <!-- Hidden: required for invisible domain conditions -->
+                <field name="state" invisible="1"/>
+
+                <!-- Блок 1: Підключення до джерела -->
+                <group string="Підключення до джерела"
+                      invisible="state == 'loading'">
+                    <field name="source_url"
+                           placeholder="https://source.example.com"
+                           required="1"/>
+                    <field name="source_db"
+                           placeholder="odoo_db"
+                           required="1"/>
+                    <field name="source_login"
+                           placeholder="admin"
+                           required="1"/>
+                    <field name="source_password"
+                           password="True"
+                           required="1"/>
+                </group>
+
+                <!-- Блок 2: Модель та параметри -->
+                <group string="Модель та параметри"
+                      invisible="state == 'loading'">
+                    <field name="target_model_id" required="1"/>
+                    <field name="record_count_source" readonly="1"/>
+                    <field name="record_count_target" readonly="1"/>
+                    <field name="start_batch_number"/>
+                </group>
+
+                <!-- Кнопка Аналізувати -->
+                <div class="mb-3" invisible="state == 'loading'">
+                    <button
+                        name="action_analyse"
+                        string="Аналізувати"
+                        type="object"
+                        class="btn btn-primary"/>
+                </div>
+
+                <!-- Таблиця полів -->
+                <field name="field_line_ids"
+                       invisible="state == 'draft'"
+                       string="Зіставлення полів">
+                    <list editable="bottom" create="false" delete="false">
+                        <field name="field_name"    readonly="1"/>
+                        <field name="field_label"   readonly="1"/>
+                        <field name="field_type"    readonly="1"/>
+                        <field name="source_exists" readonly="1" widget="boolean_toggle"/>
+                        <field name="include"       widget="boolean_toggle"/>
+                        <field name="comodel"       readonly="1" optional="show"/>
+                    </list>
+                </field>
+
+                <!-- Прогрес-віджет (Owl, реалізується в M7) -->
+                <field
+                    name="progress"
+                    widget="vd_migration_progress"
+                    invisible="state not in ('loading', 'done', 'stopped')"/>
+
                 <footer>
-                    <button string="Закрити" special="cancel" class="btn-secondary"/>
+                    <button
+                        name="action_import"
+                        string="Завантажити"
+                        type="object"
+                        class="btn btn-primary"
+                        invisible="state != 'analysed'"/>
+                    <button
+                        name="action_delete"
+                        string="Видалити"
+                        type="object"
+                        class="btn btn-danger"
+                        confirm="Ви впевнені? Всі записи обраної моделі будуть видалені з поточної бази."
+                        invisible="not target_model_id"/>
+                    <button
+                        string="Закрити"
+                        special="cancel"
+                        class="btn btn-secondary"/>
                 </footer>
+
             </form>
         </field>
     </record>
