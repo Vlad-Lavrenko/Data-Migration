@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        Action: open Migration Wizard as dialog
+    -->
+    <record id="action_vd_migration_wizard" model="ir.actions.act_window">
+        <field name="name">Міграція</field>
+        <field name="res_model">vd.migration.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="view_id" ref="view_vd_migration_wizard_form"/>
+    </record>
+
+    <!--
+        Top-level application menu entry.
+        Visible for group_migration_user and above.
+    -->
+    <menuitem
+        id="menu_vd_migration_root"
+        name="Міграція"
+        action="action_vd_migration_wizard"
+        sequence="100"
+        groups="vd_data_migration.group_migration_user"
+        web_icon="vd_data_migration,static/description/icon.png"
+    />
+
+</odoo>

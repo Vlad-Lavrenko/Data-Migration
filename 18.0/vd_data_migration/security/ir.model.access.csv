@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_vd_migration_wizard_user,vd.migration.wizard user,model_vd_migration_wizard,vd_data_migration.group_migration_user,1,1,1,0
+access_vd_migration_wizard_admin,vd.migration.wizard admin,model_vd_migration_wizard,vd_data_migration.group_migration_admin,1,1,1,1
+access_vd_migration_field_line_user,vd.migration.field.line user,model_vd_migration_field_line,vd_data_migration.group_migration_user,1,1,1,0
