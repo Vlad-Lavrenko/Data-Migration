@@ -1,6 +1,6 @@
 # План розробки модуля `vd_data_migration`
 
-> Базується на: `docs/requirements.md` v0.4 | `docs/architecture.md` v0.3
+> Базується на: `docs/requirements.md` v0.5 | `docs/architecture.md` v0.4
 
 ## Статуси
 - `[ ]` — не розпочато
@@ -53,6 +53,7 @@
 - [ ] Файл `wizard/migration_wizard.py`
 - [ ] Поля підключення: `source_url`, `source_db`, `source_login`, `source_password`, `source_session_id`
 - [ ] Поля вибору: `target_model_id`, `record_count_source`, `record_count_target`
+- [ ] Поле початку: `start_batch_number` (Integer, default=1, string='Початковий номер пакету')
 - [ ] Поля прогресу: `progress`, `progress_label`, `state` (Selection: draft/analysed/loading/done/stopped)
 - [ ] Поля статистики: `stats_created`, `stats_updated`, `stats_errors`
 - [ ] One2many: `field_line_ids`
@@ -84,12 +85,12 @@
 - [ ] Повертає `list[dict]` для запису через `field_line_ids`
 
 ### 3.3 `RecordImporter` — `services/record_importer.py`
-- [ ] `process_batch(model_name, records, field_lines)` — повертає `{created, updated, errors}`
+- [ ] `process_record(model_name, record, field_lines)` — повертає `{created: 0|1, updated: 0|1, errors: 0|1}`
 - [ ] `_prepare_values(record, field_lines)` — розбір полів за типом
 - [ ] `_find_local_record(model_name, source_id)` — `env[model].search([('id','=',source_id)])`
 - [ ] `_resolve_many2one(comodel, source_id)` — пошук/створення за FR-08
 - [ ] `_resolve_many2many(comodel, source_ids)` — список → `[(6, 0, [...])]` за FR-09
-- [ ] Логування кожного батчу: `_logger.info('Batch: +created, ~updated, !errors')`
+- [ ] Логування кожного запису: `_logger.debug('Record %s: %s', record_id, status)`
 
 ---
 
@@ -126,7 +127,7 @@
 
 - [ ] `views/migration_wizard_views.xml`
   - [ ] Блок «Підключення до джерела» (4 поля)
-  - [ ] Блок «Модель» (`target_model_id`, read-only лічильники)
+  - [ ] Блок «Модель та параметри» (`target_model_id`, read-only лічильники, `start_batch_number`)
   - [ ] Кнопка «Аналізувати» (`btn-primary`)
   - [ ] Таблиця `field_line_ids` (6 колонок, `invisible` при `state='draft'`)
   - [ ] Поле `progress` з `widget="vd_migration_progress"` (invisible по state)
@@ -145,10 +146,11 @@
   - [ ] Читає `wizard.source_session_id`, `field_line_ids` (include=True)
   - [ ] Викликає `JsonRpcClient.search_read(offset, 100)`
   - [ ] Повертає `{ records: [...], total: N }`
-- [ ] `POST /vd_migration/process_batch`
-  - [ ] Читає wizard, field_lines
-  - [ ] Викликає `RecordImporter.process_batch()`
-  - [ ] Повертає `{ created, updated, errors }`
+- [ ] `POST /vd_migration/process_record`
+  - [ ] Читає wizard + field_line_ids
+  - [ ] Викликає `RecordImporter.process_record(model, record, field_lines)`
+  - [ ] Повертає `{ created: 0|1, updated: 0|1, errors: 0|1 }`
+  - [ ] При винятку: повертає `{ created: 0, updated: 0, errors: 1 }` (не кидає 500)
 - [ ] `POST /vd_migration/finalize`
   - [ ] Оновлює `wizard.state`, `stats_*`, `progress`
   - [ ] Повертає `{ ok: True }`
@@ -160,28 +162,34 @@
 
 ## Milestone 7: JS Owl-компонент (`MigrationProgressWidget`)
 
-> Мета: реалізувати оркестратор міграції на фронтенді
+> Мета: реалізувати оркестратор міграції на фронтенді з per-record прогресом
 
 - [ ] `static/src/js/migration_progress_widget.js`
-  - [ ] Owl 2 компонент, `useState` для `progress`, `label`, `status`, `stats`
+  - [ ] Owl 2 компонент, `useState` для `progress`, `label`, `status`, `batchesLoaded`, `currentBatchNo`, `stats`
   - [ ] `onWillStart()` — авто-старт якщо `state == 'loading'`
-  - [ ] `startImport()` — головний import-цикл (fetch → process → repeat)
-  - [ ] Завершення циклу при `records.length == 0`
+  - [ ] `startImport()` — ініціалізація: `offset = (start_batch_number − 1) × 100`
+  - [ ] Зовнішній цикл `while (!this._stopped)` — по батчах
+  - [ ] `_fetchBatch()` → `POST /vd_migration/fetch_batch`
+  - [ ] Внутрішній цикл `for (const record of records)` — по записах
+  - [ ] Перевірка `this._stopped` на початку внутрішнього циклу (`break outer`)
+  - [ ] `_processRecord()` → `POST /vd_migration/process_record`
+  - [ ] Оновлення `state.progress` та `state.label` **після кожного запису**
+  - [ ] Після завершення батчу: `state.batchesLoaded += 1`, `state.currentBatchNo += 1`
   - [ ] `onStop()` — `this._stopped = true`
-  - [ ] `_fetchBatch()` — `POST /vd_migration/fetch_batch`
-  - [ ] `_processBatch()` — `POST /vd_migration/process_batch`
-  - [ ] `_finalize()` — `POST /vd_migration/finalize`
-  - [ ] `_mergeStats()` — накопичення статистики
+  - [ ] `_finalize()` → `POST /vd_migration/finalize`
+  - [ ] `_mergeStats()` — накопичення created/updated/errors
   - [ ] Реєстрація: `registry.category('fields').add('vd_migration_progress', ...)`
 - [ ] `static/src/xml/migration_progress_widget.xml`
   - [ ] Полоска з `progress-fill` (ширина через `t-attf-style`)
-  - [ ] Лічильник `X / N записів`
+  - [ ] Лічильник записів `X / N записів`
   - [ ] Бейдж статусу
   - [ ] Кнопка «Зупинити» (тільки при `status='loading'`)
+  - [ ] **Лічильник пакетів** під прогрес-баром: `Пакетів завантажено: X (поточний №Y)`
   - [ ] Блок фінальної статистики (при `done`/`stopped`)
-- [ ] `static/src/css/migration_progress_widget.css` — стилі полоски
+- [ ] `static/src/css/migration_progress_widget.css` — стилі полоски та лічильника
 - [ ] Зареєструвати у `__manifest__.py` → `web.assets_backend`
-- [ ] Перевірити: прогрес оновлюється після кожного батчу без перезавантаження
+- [ ] Перевірити: прогрес оновлюється **після кожного запису** без перезавантаження
+- [ ] Перевірити: «Зупинити» зупиняє після **поточного запису** (не батчу)
 
 ---
 
@@ -193,9 +201,10 @@
 - [ ] Відкрити меню «Міграція» — перевірити візард
 - [ ] Ввести дані підключення, обрати модель → «Аналізувати»
   - [ ] Таблиця полів заповнена, `source_exists` правильно
-- [ ] «Завантажити» → прогрес-бар оновлюється в реальному часі
-- [ ] «Зупинити» → цикл зупиняється після поточного батчу
-- [ ] Перезапустити «Завантажити» → продовжує (або з нуля)
+- [ ] «Завантажити» (start_batch_number=1) → прогрес-бар оновлюється після кожного запису
+- [ ] Перевірити лічильник пакетів під прогрес-баром
+- [ ] «Зупинити» → зупиняється після поточного **запису**
+- [ ] Перезапустити з start_batch_number=3 → offset починається з 200
 - [ ] «Видалити» → діалог підтвердження + unlink
 - [ ] Хмарні сценарії:
   - [ ] Невірні credentials → UserError «Невірний логін/пароль»
@@ -215,14 +224,14 @@
 
 ## MVP (мінімально робочий модуль)
 
-Модуль вважається готовим після завершення Milestone 1–6:
+Модуль вважається готовим після завершення Milestone 1–7:
 
 | Milestone | Що дає |
 |---|---|
 | M1 | Модуль встановлюється |
-| M2 | Моделі візарда описані |
-| M3 | JSON-RPC, зіставлення полів, обробка батчів |
+| M2 | Моделі візарда описані (включно з `start_batch_number`) |
+| M3 | JSON-RPC, зіставлення полів, per-record обробка |
 | M4 | Три кнопки працюють |
 | M5 | UI візарда готовий |
 | M6 | Ендпоінти для фронтенду готові |
-| M7 | Прогрес-бар + оркестрація на фронтенді |
+| M7 | Прогрес по запису + лічильник пакетів + оркестрація на фронтенді |
