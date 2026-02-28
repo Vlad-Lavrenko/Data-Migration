@@ -22,7 +22,7 @@ Features:
     'data': [
         'security/security_groups.xml',
         'security/ir.model.access.csv',
-        'views/migration_wizard_views.xml',
+        'wizard/migration_wizard_views.xml',
         'views/menus.xml',
     ],
     'assets': {
