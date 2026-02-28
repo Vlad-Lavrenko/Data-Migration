@@ -1,6 +1,6 @@
 # План розробки модуля `vd_data_migration`
 
-> Базується на: `docs/requirements.md` v0.5 | `docs/architecture.md` v0.4
+> Базується на: `docs/requirements.md` v0.5 | `docs/architecture.md` v0.5
 
 ## Статуси
 - `[ ]` — не розпочато
@@ -25,16 +25,17 @@
 
 > Мета: створити порожню структуру модуля, яка встановлюється без помилок
 
-- [ ] Створити `18.0/vd_data_migration/`
-- [ ] `__manifest__.py` — `application=True`, `depends=['base','web']`, JSON-RPC summary
-- [ ] `__init__.py` — `from . import models, wizard, services, controllers`
-- [ ] `models/__init__.py` — порожньо, готово до розширення
-- [ ] `wizard/__init__.py`
-- [ ] `services/__init__.py`
-- [ ] `controllers/__init__.py`
-- [ ] `security/security_groups.xml` — `group_migration_user` + `group_migration_admin`
-- [ ] `security/ir.model.access.csv` — базові права (wizard + field_line)
-- [ ] `views/menus.xml` — пункт меню «Міграція» + `ir.actions.act_window`
+- [x] Створити `vd_data_migration/` у **корені репозиторію**
+- [x] `__manifest__.py` — `application=True`, `depends=['base','web']`, `license='LGPL-3'`
+- [x] `__init__.py` — `from . import models, wizard, services, controllers`
+- [x] `models/__init__.py` — порожньо, готово до розширення
+- [x] `wizard/__init__.py` + stub-файли `migration_wizard.py`, `migration_field_line.py`
+- [x] `services/__init__.py` — placeholder
+- [x] `controllers/__init__.py` — placeholder
+- [x] `security/security_groups.xml` — `group_migration_user` + `group_migration_admin`
+- [x] `security/ir.model.access.csv` — базові права (wizard + field_line)
+- [x] `views/migration_wizard_views.xml` — placeholder form
+- [x] `views/menus.xml` — пункт меню «Міграція» + `ir.actions.act_window`
 - [ ] Перевірити: модуль встановлюється без помилок (`odoo-bin -i vd_data_migration`)
 
 ---
@@ -44,13 +45,11 @@
 > Мета: описати структуру даних візарда
 
 ### 2.1 `vd.migration.field.line`
-- [ ] Файл `wizard/migration_field_line.py`
 - [ ] Поля: `wizard_id`, `field_name`, `field_label`, `field_type`, `source_exists`, `include`, `comodel`
-- [ ] Додати до `wizard/__init__.py`
-- [ ] Додати запис у `security/ir.model.access.csv`
+- [ ] Оновити `wizard/__init__.py` (вже імпортується)
+- [ ] Перевірити запис у `security/ir.model.access.csv`
 
 ### 2.2 `vd.migration.wizard`
-- [ ] Файл `wizard/migration_wizard.py`
 - [ ] Поля підключення: `source_url`, `source_db`, `source_login`, `source_password`, `source_session_id`
 - [ ] Поля вибору: `target_model_id`, `record_count_source`, `record_count_target`
 - [ ] Поле початку: `start_batch_number` (Integer, default=1, string='Початковий номер пакету')
@@ -58,8 +57,6 @@
 - [ ] Поля статистики: `stats_created`, `stats_updated`, `stats_errors`
 - [ ] One2many: `field_line_ids`
 - [ ] Порожні заголовки методів: `action_analyse`, `action_import`, `action_delete`, `_get_rpc_client`
-- [ ] Додати до `wizard/__init__.py`
-- [ ] Додати запис у `security/ir.model.access.csv`
 
 ---
 
@@ -123,16 +120,15 @@
 
 ## Milestone 5: Form view візарда
 
-> Мета: створити UI згідно `docs/architecture.md` розділ 6
+> Мета: створити повний UI згідно `docs/architecture.md` розділ 6
 
-- [ ] `views/migration_wizard_views.xml`
+- [ ] `views/migration_wizard_views.xml` — замінити placeholder на повну форму:
   - [ ] Блок «Підключення до джерела» (4 поля)
   - [ ] Блок «Модель та параметри» (`target_model_id`, read-only лічильники, `start_batch_number`)
   - [ ] Кнопка «Аналізувати» (`btn-primary`)
   - [ ] Таблиця `field_line_ids` (6 колонок, `invisible` при `state='draft'`)
   - [ ] Поле `progress` з `widget="vd_migration_progress"` (invisible по state)
   - [ ] Footer: «Завантажити» (invisible якщо не analysed), «Видалити», «Закрити»
-- [ ] `views/menus.xml` — пункт меню + `ir.actions.act_window`
 - [ ] Перевірити view візуально в Odoo UI
 
 ---
@@ -187,7 +183,7 @@
   - [ ] **Лічильник пакетів** під прогрес-баром: `Пакетів завантажено: X (поточний №Y)`
   - [ ] Блок фінальної статистики (при `done`/`stopped`)
 - [ ] `static/src/css/migration_progress_widget.css` — стилі полоски та лічильника
-- [ ] Зареєструвати у `__manifest__.py` → `web.assets_backend`
+- [ ] Розкоментувати assets у `__manifest__.py` → `web.assets_backend`
 - [ ] Перевірити: прогрес оновлюється **після кожного запису** без перезавантаження
 - [ ] Перевірити: «Зупинити» зупиняє після **поточного запису** (не батчу)
 
@@ -228,7 +224,7 @@
 
 | Milestone | Що дає |
 |---|---|
-| M1 | Модуль встановлюється |
+| M1 | Модуль встановлюється (`vd_data_migration/` у корені репо) |
 | M2 | Моделі візарда описані (включно з `start_batch_number`) |
 | M3 | JSON-RPC, зіставлення полів, per-record обробка |
 | M4 | Три кнопки працюють |

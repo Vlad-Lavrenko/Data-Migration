@@ -1,54 +1,61 @@
 # Архітектура модуля `vd_data_migration`
 
-> Версія: 0.4 | Базується на: `docs/requirements.md` v0.5, `.rules/odoo-conventions.md`
+> Версія: 0.5 | Базується на: `docs/requirements.md` v0.5, `.rules/odoo-conventions.md`
 
 ---
 
 ## 1. Загальна структура файлів
 
 ```
-18.0/
-└── vd_data_migration/
-    ├── __init__.py                  # from . import models, wizard, services, controllers
-    ├── __manifest__.py
-    |
-    ├── models/                      # Тільки models.Model / AbstractModel
-    │   └── __init__.py              # (порожньо, готово до розширення)
-    |
-    ├── wizard/                      # Тільки models.TransientModel
-    │   ├── __init__.py
-    │   ├── migration_wizard.py      # TransientModel — головний візард
-    │   └── migration_field_line.py  # TransientModel — рядок таблиці полів
-    |
-    ├── services/                    # Чиста Python-логіка, без Odoo ORM
-    │   ├── __init__.py
-    │   ├── json_rpc_client.py       # JSON-RPC клієнт (urllib.request + json)
-    │   ├── field_mapper.py          # Зіставлення полів source/target
-    │   └── record_importer.py       # Обробка одного запису (per-record)
-    |
-    ├── controllers/
-    │   ├── __init__.py
-    │   └── migration_controller.py  # HTTP JSON ендпоінти для Owl-компонента
-    |
-    ├── views/
-    │   ├── migration_wizard_views.xml  # Form view візарда
-    │   └── menus.xml                   # Меню + action
-    |
-    ├── security/
-    │   ├── security_groups.xml         # Групи доступу
-    │   └── ir.model.access.csv         # Права CRUD
-    |
-    └── static/
-        ├── description/
-        │   └── icon.png
-        └── src/
-            ├── js/
-            │   └── migration_progress_widget.js   # Owl 2 компонент-оркестратор
-            ├── xml/
-            │   └── migration_progress_widget.xml  # Owl-шаблон
-            └── css/
-                └── migration_progress_widget.css
+<repo-root>/
+├── .rules/
+├── .skills/
+├── docs/
+├── vd_data_migration/          ← модуль у корені репозиторію
+│   ├── __init__.py             # from . import models, wizard, services, controllers
+│   ├── __manifest__.py
+│   |
+│   ├── models/                 # Тільки models.Model / AbstractModel
+│   │   └── __init__.py         # (порожньо, готово до розширення)
+│   |
+│   ├── wizard/                 # Тільки models.TransientModel
+│   │   ├── __init__.py
+│   │   ├── migration_wizard.py      # TransientModel — головний візард
+│   │   └── migration_field_line.py  # TransientModel — рядок таблиці полів
+│   |
+│   ├── services/               # Чиста Python-логіка, без Odoo ORM
+│   │   ├── __init__.py
+│   │   ├── json_rpc_client.py  # JSON-RPC клієнт (urllib.request + json)
+│   │   ├── field_mapper.py     # Зіставлення полів source/target
+│   │   └── record_importer.py  # Обробка одного запису (per-record)
+│   |
+│   ├── controllers/
+│   │   ├── __init__.py
+│   │   └── migration_controller.py  # HTTP JSON ендпоінти для Owl-компонента
+│   |
+│   ├── views/
+│   │   ├── migration_wizard_views.xml  # Form view візарда
+│   │   └── menus.xml                   # Меню + action
+│   |
+│   ├── security/
+│   │   ├── security_groups.xml         # Групи доступу
+│   │   └── ir.model.access.csv         # Права CRUD
+│   |
+│   └── static/
+│       ├── description/
+│       │   └── icon.png
+│       └── src/
+│           ├── js/
+│           │   └── migration_progress_widget.js   # Owl 2 компонент-оркестратор
+│           ├── xml/
+│           │   └── migration_progress_widget.xml  # Owl-шаблон
+│           └── css/
+│               └── migration_progress_widget.css
+└── requirements.txt
 ```
+
+> **Розташування модуля:** `vd_data_migration/` знаходиться в **корені репозиторію** (не у підпапці `18.0/`).
+> При розгортанні на Odoo-сервері — додати шлях до кореня репо у `addons_path`.
 
 ---
 
@@ -274,7 +281,6 @@ setup() {
         stats: { created: 0, updated: 0, errors: 0 },
     });
     this._stopped = false;
-    // Авто-старт: якщо wizard.state == 'loading' — запустити startImport()
     onWillStart(async () => {
         if (this.props.record.data.state === 'loading') {
             await this.startImport();
@@ -290,8 +296,8 @@ async startImport() {
     const total      = this.props.record.data.record_count_source;
     const startBatch = this.props.record.data.start_batch_number || 1;
 
-    let offset       = (startBatch - 1) * 100;  // реальний зсув читання
-    let processed    = offset;                   // прогрес з урахуванням попередніх
+    let offset        = (startBatch - 1) * 100;
+    let processed     = offset;
     let batchesLoaded = 0;
     let currentBatchNo = startBatch;
 
@@ -299,30 +305,19 @@ async startImport() {
     this.state.status = 'loading';
     this.state.currentBatchNo = startBatch;
 
-    // ── ЗОВНІШНІЙ ЦИКЛ: по батчах ──────────────────────────────────
     outer: while (!this._stopped) {
-
-        // 1. Отримати батч з джерела
         const { records } = await this._fetchBatch(wizardId, offset);
-
-        // 2. Якщо 0 записів — всі дані отримані
         if (!records.length) break;
 
-        // ── ВНУТРІШНІЙ ЦИКЛ: по записах батчу ──────────────────────
         for (const record of records) {
-            if (this._stopped) break outer;   // зупинка після поточного запису
-
-            // 3. Обробити один запис на бекенді
+            if (this._stopped) break outer;
             const r = await this._processRecord(wizardId, record);
-
-            // 4. Оновити прогрес ПІСЛЯ КОЖНОГО ЗАПИСУ
             processed += 1;
             this._mergeStats(r);
             this.state.progress = total ? Math.round(processed / total * 100) : 100;
             this.state.label = `${processed} / ${total} записів`;
         }
 
-        // 5. Завершення батчу
         offset += records.length;
         batchesLoaded += 1;
         currentBatchNo += 1;
@@ -330,15 +325,12 @@ async startImport() {
         this.state.currentBatchNo = currentBatchNo;
     }
 
-    // 6. Фіналізація
     const finalState = this._stopped ? 'stopped' : 'done';
     await this._finalize(wizardId, finalState);
     this.state.status = finalState;
 }
 
-onStop() {
-    this._stopped = true;
-}
+onStop() { this._stopped = true; }
 
 async _fetchBatch(wizardId, offset) {
     return this.env.services.http.post(
@@ -346,21 +338,18 @@ async _fetchBatch(wizardId, offset) {
         { wizard_id: wizardId, offset, limit: 100 }
     );
 }
-
 async _processRecord(wizardId, record) {
     return this.env.services.http.post(
         '/vd_migration/process_record',
         { wizard_id: wizardId, record }
     );
 }
-
 async _finalize(wizardId, state) {
     return this.env.services.http.post(
         '/vd_migration/finalize',
         { wizard_id: wizardId, state, ...this.state.stats }
     );
 }
-
 _mergeStats(r) {
     this.state.stats.created += r.created || 0;
     this.state.stats.updated += r.updated || 0;
@@ -372,29 +361,17 @@ _mergeStats(r) {
 ```xml
 <t t-name="vd_migration.MigrationProgressWidget">
   <div class="vd-progress-bar" t-if="state.status !== 'idle'">
-
-    <!-- Прогрес-полоска -->
     <div class="progress-track">
       <div class="progress-fill" t-attf-style="width: {{state.progress}}%"/>
     </div>
-
-    <!-- Лічильник записів + статус -->
     <span class="vd-label" t-esc="state.label"/>
     <span t-attf-class="badge badge-{{state.status}}" t-esc="state.status"/>
-
-    <!-- Кнопка «Зупинити» -->
     <button t-if="state.status === 'loading'"
-            t-on-click="onStop" class="btn btn-sm btn-warning">
-      Зупинити
-    </button>
-
-    <!-- Лічильник пакетів (під прогрес-баром) -->
+            t-on-click="onStop" class="btn btn-sm btn-warning">Зупинити</button>
     <div class="vd-batch-counter" t-if="state.status === 'loading'">
       Пакетів завантажено: <b t-esc="state.batchesLoaded"/>
       (поточний пакет №<b t-esc="state.currentBatchNo"/>)
     </div>
-
-    <!-- Фінальна статистика -->
     <div t-if="state.status in ['done','stopped']" class="vd-stats">
       Створено: <b t-esc="state.stats.created"/> |
       Оновлено: <b t-esc="state.stats.updated"/> |
@@ -413,7 +390,6 @@ _mergeStats(r) {
 ## 6. Views — Структура форми
 
 ```xml
-<!-- views/migration_wizard_views.xml -->
 <form string="Міграція даних">
   <group string="Підключення до джерела">
     <field name="source_url"/>
@@ -421,17 +397,14 @@ _mergeStats(r) {
     <field name="source_login"/>
     <field name="source_password" password="True"/>
   </group>
-
   <group string="Модель та параметри">
     <field name="target_model_id"/>
     <field name="record_count_source" readonly="1"/>
     <field name="record_count_target" readonly="1"/>
     <field name="start_batch_number"/>
   </group>
-
   <button name="action_analyse" string="Аналізувати"
           type="object" class="btn-primary"/>
-
   <field name="field_line_ids" invisible="state == 'draft'">
     <tree editable="bottom">
       <field name="field_name"    readonly="1"/>
@@ -442,11 +415,8 @@ _mergeStats(r) {
       <field name="comodel"       readonly="1"/>
     </tree>
   </field>
-
-  <!-- Прогрес-бар / оркестратор — Owl 2 компонент -->
   <field name="progress" widget="vd_migration_progress"
          invisible="state not in ['loading','done','stopped']"/>
-
   <footer>
     <button name="action_import" string="Завантажити"
             type="object" class="btn-primary"
@@ -493,6 +463,7 @@ draft ──[action_analyse OK]──► analysed
     'depends': ['base', 'web'],
     'application': True,
     'installable': True,
+    'license': 'LGPL-3',
     'data': [
         'security/security_groups.xml',
         'security/ir.model.access.csv',
@@ -554,39 +525,22 @@ ir.model.access.csv:
      │ Owl-компонент виявляє state='loading' → onWillStart()
      ▼
 [JS: MigrationProgressWidget.startImport()]   ← ФРОНТЕНД ОРКЕСТРУЄ
-     │
      │  offset = (start_batch_number − 1) × 100
      │
-     │  ┌─── ЗОВНІШНІЙ ЦИКЛ (по батчах) ──────────────────────────────┐
-     │  │                                                               │
-     │  │  POST /vd_migration/fetch_batch { wizard_id, offset, 100 }   │
-     │  │    → controllers → json_rpc_client.search_read()             │
-     │  │    ←── source DB (JSON-RPC) ← { records: [...] }             │
-     │  │                                                               │
-     │  │  if records.length == 0 → break ─────────────────────────►  │
-     │  │                                                               │
-     │  │  ┌─── ВНУТРІШНІЙ ЦИКЛ (по записах) ─────────────────────┐   │
-     │  │  │                                                         │   │
-     │  │  │  if this._stopped → break outer                        │   │
-     │  │  │                                                         │   │
-     │  │  │  POST /vd_migration/process_record { wizard_id, record }│   │
-     │  │  │    → controllers → RecordImporter.process_record()     │   │
-     │  │  │         → _prepare_values()                            │   │
-     │  │  │              → _resolve_many2one/many2many             │   │
-     │  │  │         → env[model].search(id) → write/create         │   │
-     │  │  │    ← { created, updated, errors }                      │   │
-     │  │  │                                                         │   │
-     │  │  │  processed += 1                                        │   │
-     │  │  │  Оновити progress bar ПІСЛЯ КОЖНОГО ЗАПИСУ             │   │
-     │  │  └────────────────────────────────────────────────────────┘   │
-     │  │                                                               │
-     │  │  offset += records.length                                    │
-     │  │  batchesLoaded += 1  →  Оновити лічильник пакетів            │
-     │  └───────────────────────────────────────────────────────────────┘
-     │
-     │  POST /vd_migration/finalize { state, stats }
+     │  ┌─── ЗОВНІШНІЙ ЦИКЛ (по батчах) ───────────────────────────┐
+     │  │  POST /vd_migration/fetch_batch → search_read → source DB  │
+     │  │  if records=0 → break                                      │
+     │  │  ┌─── ВНУТРІШНІЙ ЦИКЛ (по записах) ──────────────────┐    │
+     │  │  │  if _stopped → break outer                         │    │
+     │  │  │  POST /vd_migration/process_record                 │    │
+     │  │  │    → RecordImporter → write/create                 │    │
+     │  │  │  processed += 1 → оновити progress bar             │    │
+     │  │  └────────────────────────────────────────────────────┘    │
+     │  │  batchesLoaded += 1 → оновити лічильник пакетів           │
+     │  └───────────────────────────────────────────────────────────┘
+     │  POST /vd_migration/finalize
      ▼
-[wizard.state = 'done'/'stopped', stats збережено]
+[wizard.state = 'done'/'stopped']
 ```
 
 ---
@@ -595,6 +549,7 @@ ir.model.access.csv:
 
 | Задача | Рішення |
 |---|---|
+| Розташування модуля | `vd_data_migration/` у **корені репозиторію** (не в `18.0/`) |
 | Протокол зв'язку з джерелом | **JSON-RPC 2.0** через `urllib.request` (stdlib, без deps) |
 | TransientModel'и окремо | Папка `wizard/` (правило `.rules/odoo-conventions.md`) |
 | Прогрес у реальному часі | **Frontend-driven** — Owl 2, подвійний цикл, оновлення **по запису** |
@@ -602,7 +557,7 @@ ir.model.access.csv:
 | Внутрішній цикл | Фронтенд обробляє кожен запис окремо: `process_record` |
 | Початковий зсув | `offset = (start_batch_number − 1) × 100` (поле `start_batch_number`, default=1) |
 | Зупинка | `this._stopped = true` перевіряється в ОБОХ циклах — зупинка після поточного **запису** |
-| Лічильник пакетів | `batchesLoaded` — збільшується після завершення батчу, показується під прогрес-баром |
+| Лічильник пакетів | `batchesLoaded` — збільшується після батчу, показується під прогрес-баром |
 | CORS | Відсутній — фронтенд читає через **бекенд-проксі** (`fetch_batch`) |
 | Пароль не зберігається | `TransientModel` — чиститься Odoo автоматично |
 | Many2one / Many2many | `_resolve_many2one` з кешем локальних ID (бекенд) |
