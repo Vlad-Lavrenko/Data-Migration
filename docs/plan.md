@@ -9,38 +9,22 @@
 
 ---
 
-## Milestone 0–6 — виконано [x]
-
----
-
-## Milestone 7: JS Owl-компонент (`MigrationProgressWidget`)
-
-- [x] `static/src/js/migration_progress_widget.js`
-  - [x] Owl 2 `Component`, `useState`, `onMounted`
-  - [x] `startImport()` — подвійний цикл `outerLoop` (batch) / inner (per-record)
-  - [x] `stopImport()` — `this._stopped = true`, перевірка на початку обох циклів (FR-10)
-  - [x] `_updateProgress()` — оновлення після кожного запису (FR-11)
-  - [x] Resume з `start_batch_number`: `offset = (startBatch - 1) * 100`
-  - [x] Ініціалізація `state` з полів wizard (для відображення попереднього результату)
-  - [x] Getters `statusLabel`, `statusClass`
-  - [x] `registry.category("fields").add("vd_migration_progress", ...)`
-- [x] `static/src/xml/migration_progress_widget.xml`
-  - [x] Progress bar (анімована при `running`)
-  - [x] Лічильник записів і пакетів
-  - [x] Кнопка «Зупинити» (visible при `running`)
-  - [x] Фінальна статистика badges (visible при `done`/`stopped`)
-  - [x] Alert при `error`
-- [x] `static/src/css/migration_progress_widget.css` — стилі
-- [x] `__manifest__.py` — assets розкоментовано
+## Milestone 0–7 — виконано [x]
 
 ---
 
 ## Milestone 8: Інтеграційне тестування
 
-- [ ] Встановити модуль: `odoo-bin -i vd_data_migration -d <db>`
-- [ ] Перевірити scaffolding: модуль з’являється в Apps без помилок
-- [ ] Повний цикл: аналіз → завантаження → зупинка → відновлення → видалення
-- [ ] Хмарні сценарії: невірні credentials, недоступний сервер, модель не існує
+> Детальний чекліст: `docs/testing.md`
+
+- [~] TC-01: Scaffolding — модуль встановлюється, меню відображається
+- [ ] TC-02: Аналіз — позитивний кейс
+- [ ] TC-03: Аналіз — негативні кейси
+- [ ] TC-04: Імпорт — повний цикл
+- [ ] TC-05: Резюм з `start_batch_number`
+- [ ] TC-06: Зупинка імпорту
+- [ ] TC-07: Кнопка «Видалити»
+- [ ] TC-08: Many2one / Many2many
 
 ---
 
