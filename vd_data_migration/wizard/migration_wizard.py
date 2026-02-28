@@ -30,16 +30,20 @@ class MigrationWizard(models.TransientModel):
     )
     source_login = fields.Char(
         string='Login',
-        help='Username for authentication on the source instance.',
+        help='Username for authentication on the source instance. '
+             'Not required if Session ID is provided.',
     )
     source_password = fields.Char(
         string='Password',
-        help='Password for authentication on the source instance.',
+        help='Password for authentication on the source instance. '
+             'Not required if Session ID is provided.',
         password=True,
     )
     source_session_id = fields.Char(
         string='Session ID',
-        help='JSON-RPC session_id obtained after authentication. Stored in memory only.',
+        help='Valid JSON-RPC session_id. '
+             'If provided — authentication is skipped and Login/Password are ignored. '
+             'Useful when the source instance restricts /web/session/authenticate via nginx.',
     )
 
     # ── Target model & counters ───────────────────────────────────────
@@ -127,7 +131,7 @@ class MigrationWizard(models.TransientModel):
 
         Steps (FR-05):
             1. Validate required fields.
-            2. Authenticate via JSON-RPC and store session_id.
+            2. Get RPC client (authenticate or reuse session_id).
             3. Verify the target model exists on the source.
             4. Fetch record counts (source + local target).
             5. Build field mapping lines via FieldMapper.
@@ -140,10 +144,9 @@ class MigrationWizard(models.TransientModel):
         self._validate_connection_fields()
 
         rpc = self._get_rpc_client()
-        model_name = self.target_model_id.model
+        model_name  = self.target_model_id.model
         model_label = self.target_model_id.name
 
-        # Verify model exists on source instance (FR-05, step 3)
         if not rpc.model_exists(model_name):
             raise UserError(
                 f'Model "{model_label}" ({model_name}) '
@@ -154,9 +157,8 @@ class MigrationWizard(models.TransientModel):
         count_target = self.env[model_name].search_count([])
 
         mapper = FieldMapper(rpc, self.env)
-        lines = mapper.build_field_lines(model_name)
+        lines  = mapper.build_field_lines(model_name)
 
-        # (5,0,0) deletes all existing lines before writing new ones
         self.write({
             'record_count_source': count_source,
             'record_count_target': count_target,
@@ -185,7 +187,7 @@ class MigrationWizard(models.TransientModel):
         """
         self.ensure_one()
         if self.state != 'analysed':
-            raise UserError('Run «Analyse» first before starting the import.')
+            raise UserError('Запустіть «Аналіз» перед імпортом.')
 
         self.write({
             'stats_created':  0,
@@ -198,7 +200,6 @@ class MigrationWizard(models.TransientModel):
 
         _logger.info('action_import: wizard=%s state=loading', self.id)
 
-        # Reload the form so the Owl widget detects state='loading'
         view_id = self.env.ref('vd_data_migration.view_vd_migration_wizard_form').id
         return {
             'type':      'ir.actions.act_window',
@@ -213,8 +214,7 @@ class MigrationWizard(models.TransientModel):
         """Delete all records of the target model (FR-07).
 
         The XML button carries confirm="..." so the user already confirmed
-        before this method is called. Deletes all records, resets
-        record_count_target, and shows a success notification.
+        before this method is called.
 
         Returns:
             dict: display_notification action with deletion summary.
@@ -224,20 +224,18 @@ class MigrationWizard(models.TransientModel):
         """
         self.ensure_one()
         if not self.target_model_id:
-            raise UserError('Select a target model first.')
+            raise UserError('Оберіть цільову модель.')
 
         model_name  = self.target_model_id.model
         model_label = self.target_model_id.name
 
         records = self.env[model_name].search([])
         count   = len(records)
-        records.unlink()  # sudo: authorised by group_migration_admin (see security)
+        records.unlink()  # sudo: authorised by group_migration_admin
 
         self.write({'record_count_target': 0})
 
-        _logger.info(
-            'action_delete: model=%s deleted=%d records', model_name, count,
-        )
+        _logger.info('action_delete: model=%s deleted=%d', model_name, count)
 
         return {
             'type': 'ir.actions.client',
@@ -253,12 +251,17 @@ class MigrationWizard(models.TransientModel):
     # ── Private helpers ───────────────────────────────────────────────
 
     def _get_rpc_client(self) -> JsonRpcClient:
-        """Create, authenticate, and return a JsonRpcClient.
+        """Create and return a JsonRpcClient.
 
-        Stores the session_id in source_session_id (TransientModel memory only).
+        If source_session_id is already set on the wizard, it is used
+        directly and the authentication step is skipped entirely.
+        This allows working with instances where /web/session/authenticate
+        is blocked (e.g. closed via nginx).
+
+        Otherwise, authenticates normally and stores the new session_id.
 
         Returns:
-            JsonRpcClient: Authenticated client ready for RPC calls.
+            JsonRpcClient: Client ready for RPC calls.
 
         Raises:
             UserError: Propagated from JsonRpcClient.authenticate().
@@ -266,15 +269,33 @@ class MigrationWizard(models.TransientModel):
         rpc = JsonRpcClient(
             url=self.source_url,
             db=self.source_db,
-            login=self.source_login,
-            password=self.source_password,
+            login=self.source_login or '',
+            password=self.source_password or '',
         )
-        session_id = rpc.authenticate()
-        self.source_session_id = session_id  # stored in TransientModel memory only
+
+        if self.source_session_id:
+            # Bypass authentication — use the provided session_id directly
+            rpc._session_id = self.source_session_id
+            _logger.info(
+                '_get_rpc_client: using provided session_id (auth skipped), url=%s',
+                self.source_url,
+            )
+        else:
+            # Authenticate and persist the new session_id in wizard memory
+            session_id = rpc.authenticate()
+            self.source_session_id = session_id  # TransientModel only, not persisted to DB
+            _logger.info(
+                '_get_rpc_client: authenticated successfully, url=%s',
+                self.source_url,
+            )
+
         return rpc
 
     def _validate_connection_fields(self) -> None:
         """Raise UserError if any required connection field is missing.
+
+        Login and password are required only when source_session_id
+        is not provided (auth bypass mode).
 
         Raises:
             UserError: With a list of missing field labels.
@@ -282,8 +303,12 @@ class MigrationWizard(models.TransientModel):
         missing = []
         if not self.source_url:      missing.append('Source URL')
         if not self.source_db:       missing.append('Database')
-        if not self.source_login:    missing.append('Login')
-        if not self.source_password: missing.append('Password')
         if not self.target_model_id: missing.append('Target Model')
+
+        # Login/password only required when session_id is absent
+        if not self.source_session_id:
+            if not self.source_login:    missing.append('Login')
+            if not self.source_password: missing.append('Password')
+
         if missing:
             raise UserError(f'Fill in required fields: {", ".join(missing)}.')

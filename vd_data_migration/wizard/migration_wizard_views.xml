@@ -13,18 +13,31 @@
                 <!-- Блок 1: Підключення до джерела -->
                 <group string="Підключення до джерела"
                       invisible="state == 'loading'">
+
                     <field name="source_url"
                            placeholder="https://source.example.com"
                            required="1"/>
                     <field name="source_db"
                            placeholder="odoo_db"
                            required="1"/>
+
+                    <!-- Login/password необов'язкові якщо вказано Session ID -->
                     <field name="source_login"
                            placeholder="admin"
-                           required="1"/>
+                           required="not source_session_id"/>
                     <field name="source_password"
                            password="True"
-                           required="1"/>
+                           required="not source_session_id"/>
+
+                    <separator string="Або вкажіть валідний Session ID"/>
+
+                    <field name="source_session_id"
+                           placeholder="abc123... (необов'язково)"/>
+
+                    <div class="text-muted small" invisible="not source_session_id">
+                        Авторизація буде пропущена — використовується вказаний Session ID.
+                    </div>
+
                 </group>
 
                 <!-- Блок 2: Модель та параметри -->
@@ -59,7 +72,7 @@
                     </list>
                 </field>
 
-                <!-- Прогрес-віджет (Owl, реалізується в M7) -->
+                <!-- Прогрес-віджет (Owl, M7) -->
                 <field
                     name="progress"
                     widget="vd_migration_progress"
