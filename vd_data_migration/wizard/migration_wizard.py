@@ -1,5 +1,10 @@
-from odoo import models, fields
 import logging
+
+from odoo import models, fields
+from odoo.exceptions import UserError
+
+from ..services.json_rpc_client import JsonRpcClient
+from ..services.field_mapper import FieldMapper
 
 _logger = logging.getLogger(__name__)
 
@@ -115,41 +120,170 @@ class MigrationWizard(models.TransientModel):
         default='draft',
     )
 
-    # ── Actions (implemented in M4) ───────────────────────────────────
+    # ── Public actions ─────────────────────────────────────────────────
 
     def action_analyse(self):
         """Analyse the source instance and populate field_line_ids.
 
-        Connects to the source via JSON-RPC, fetches field metadata,
-        and compares with the target model. Sets state to 'analysed'.
-        Implemented in M4.
+        Steps (FR-05):
+            1. Validate required fields.
+            2. Authenticate via JSON-RPC and store session_id.
+            3. Verify the target model exists on the source.
+            4. Fetch record counts (source + local target).
+            5. Build field mapping lines via FieldMapper.
+            6. Write results to the wizard and set state='analysed'.
+
+        Raises:
+            UserError: On missing fields, unreachable server, or unknown model.
         """
-        pass
+        self.ensure_one()
+        self._validate_connection_fields()
+
+        rpc = self._get_rpc_client()
+        model_name = self.target_model_id.model
+        model_label = self.target_model_id.name
+
+        # Verify model exists on source instance (FR-05, step 3)
+        if not rpc.model_exists(model_name):
+            raise UserError(
+                f'Model "{model_label}" ({model_name}) '
+                f'does not exist on the source instance.'
+            )
+
+        count_source = rpc.search_count(model_name)
+        count_target = self.env[model_name].search_count([])
+
+        mapper = FieldMapper(rpc, self.env)
+        lines = mapper.build_field_lines(model_name)
+
+        # (5,0,0) deletes all existing lines before writing new ones
+        self.write({
+            'record_count_source': count_source,
+            'record_count_target': count_target,
+            'field_line_ids': [(5, 0, 0)] + [(0, 0, line) for line in lines],
+            'state': 'analysed',
+        })
+
+        _logger.info(
+            'action_analyse: model=%s source=%d target=%d fields=%d',
+            model_name, count_source, count_target, len(lines),
+        )
+        return True
 
     def action_import(self):
-        """Start the import process.
+        """Start the import process (FR-06 backend part).
 
-        Resets statistics, sets state to 'loading', and returns a form
-        reload action so the Owl component can start the import cycle.
-        Implemented in M4.
-        """
-        pass
-
-    def action_delete(self):
-        """Delete all records in the target model.
-
-        Shows a confirmation dialog, then calls unlink() on all records
-        of the selected target model. Resets record_count_target to 0.
-        Implemented in M4.
-        """
-        pass
-
-    def _get_rpc_client(self):
-        """Create and return a JsonRpcClient instance from wizard fields.
+        Validates state, resets statistics, sets state='loading', and returns
+        a form reload action so the Owl component detects the state change
+        and starts the import cycle.
 
         Returns:
-            JsonRpcClient: configured with source_url, source_db,
-                           source_login, source_password.
-        Implemented in M4.
+            dict: ir.actions.act_window that reopens this wizard record.
+
+        Raises:
+            UserError: If state is not 'analysed'.
         """
-        pass
+        self.ensure_one()
+        if self.state != 'analysed':
+            raise UserError('Run «Analyse» first before starting the import.')
+
+        self.write({
+            'stats_created':  0,
+            'stats_updated':  0,
+            'stats_errors':   0,
+            'progress':       0,
+            'progress_label': '',
+            'state':          'loading',
+        })
+
+        _logger.info('action_import: wizard=%s state=loading', self.id)
+
+        # Reload the form so the Owl widget detects state='loading'
+        view_id = self.env.ref('vd_data_migration.view_vd_migration_wizard_form').id
+        return {
+            'type':      'ir.actions.act_window',
+            'res_model': self._name,
+            'res_id':    self.id,
+            'view_mode': 'form',
+            'target':    'new',
+            'view_id':   view_id,
+        }
+
+    def action_delete(self):
+        """Delete all records of the target model (FR-07).
+
+        The XML button carries confirm="..." so the user already confirmed
+        before this method is called. Deletes all records, resets
+        record_count_target, and shows a success notification.
+
+        Returns:
+            dict: display_notification action with deletion summary.
+
+        Raises:
+            UserError: If no target model is selected.
+        """
+        self.ensure_one()
+        if not self.target_model_id:
+            raise UserError('Select a target model first.')
+
+        model_name  = self.target_model_id.model
+        model_label = self.target_model_id.name
+
+        records = self.env[model_name].search([])
+        count   = len(records)
+        records.unlink()  # sudo: authorised by group_migration_admin (see security)
+
+        self.write({'record_count_target': 0})
+
+        _logger.info(
+            'action_delete: model=%s deleted=%d records', model_name, count,
+        )
+
+        return {
+            'type': 'ir.actions.client',
+            'tag':  'display_notification',
+            'params': {
+                'title':   'Видалено',
+                'message': f'Видалено {count} записів моделі «{model_label}».',
+                'type':    'success',
+                'sticky':  False,
+            },
+        }
+
+    # ── Private helpers ───────────────────────────────────────────────
+
+    def _get_rpc_client(self) -> JsonRpcClient:
+        """Create, authenticate, and return a JsonRpcClient.
+
+        Stores the session_id in source_session_id (TransientModel memory only).
+
+        Returns:
+            JsonRpcClient: Authenticated client ready for RPC calls.
+
+        Raises:
+            UserError: Propagated from JsonRpcClient.authenticate().
+        """
+        rpc = JsonRpcClient(
+            url=self.source_url,
+            db=self.source_db,
+            login=self.source_login,
+            password=self.source_password,
+        )
+        session_id = rpc.authenticate()
+        self.source_session_id = session_id  # stored in TransientModel memory only
+        return rpc
+
+    def _validate_connection_fields(self) -> None:
+        """Raise UserError if any required connection field is missing.
+
+        Raises:
+            UserError: With a list of missing field labels.
+        """
+        missing = []
+        if not self.source_url:      missing.append('Source URL')
+        if not self.source_db:       missing.append('Database')
+        if not self.source_login:    missing.append('Login')
+        if not self.source_password: missing.append('Password')
+        if not self.target_model_id: missing.append('Target Model')
+        if missing:
+            raise UserError(f'Fill in required fields: {", ".join(missing)}.')

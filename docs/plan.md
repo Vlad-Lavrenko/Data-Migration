@@ -24,13 +24,13 @@
 ## Milestone 1: Scaffolding модуля
 
 - [x] Створити `vd_data_migration/` у **корені репозиторію**
-- [x] `__manifest__.py` — `application=True`, `depends=['base','web']`, `license='LGPL-3'`
-- [x] `__init__.py` — `from . import models, wizard, services, controllers`
-- [x] `models/__init__.py` — порожньо
+- [x] `__manifest__.py`
+- [x] `__init__.py`
+- [x] `models/__init__.py`
 - [x] `wizard/__init__.py` + stub-файли
 - [x] `wizard/migration_wizard_views.xml` — placeholder
-- [x] `services/__init__.py` — placeholder
-- [x] `controllers/__init__.py` — placeholder
+- [x] `services/__init__.py`
+- [x] `controllers/__init__.py`
 - [x] `security/security_groups.xml`
 - [x] `security/ir.model.access.csv`
 - [x] `views/menus.xml`
@@ -41,57 +41,42 @@
 ## Milestone 2: Транзієнтні моделі (`wizard/`)
 
 - [x] `vd.migration.field.line` — 7 полів
-- [x] `vd.migration.wizard` — 16 полів + 4 method stubs
-- [x] `wizard/__init__.py` — імпорти присутні
-- [x] `security/ir.model.access.csv` — записи є
+- [x] `vd.migration.wizard` — 16 полів
+- [x] `wizard/__init__.py`
+- [x] `security/ir.model.access.csv`
 
 ---
 
 ## Milestone 3: Сервіси (`services/`)
 
-### 3.1 `JsonRpcClient` — `services/json_rpc_client.py`
-- [x] `__init__`: url, db, login, password, `_session_id=None`, `_uid=None`
-- [x] `authenticate()` — `POST /web/session/authenticate`, зберігає `_session_id`
-- [x] `_call_kw()` — `POST /web/dataset/call_kw` з Cookie header
-- [x] `model_exists()` — search_count на `ir.model`
-- [x] `fields_get()` — атрибути `string`, `type`, `relation`
-- [x] `search_count()` — повертає `int`
-- [x] `search_read()` — батчинг `offset` + `limit`
-- [x] Обробка: `socket.timeout`, `URLError`, JSON error → `UserError`
-- [x] `_logger.info/error` для всіх RPC-операцій
-- [x] `_handle_rpc_error()` — перевіряє JSON-RPC error field
-
-### 3.2 `FieldMapper` — `services/field_mapper.py`
-- [x] `build_field_lines()` — `fields_get` + `env[model]._fields`
-- [x] `source_exists = field_name in source_fields`
-- [x] `include=True` для всіх; `one2many` → `include=False`
-- [x] Повертає `list[dict]` для `field_line_ids`
-
-### 3.3 `RecordImporter` — `services/record_importer.py`
-- [x] `process_record()` — `{created, updated, errors}`
-- [x] `_prepare_values()` — many2one, many2many, one2many, інші типи
-- [x] `_find_local_record()` — `search([('id','=',source_id)])`
-- [x] `_resolve_many2one()` — FR-08: пошук / placeholder `name='<{id}>'`
-- [x] `_resolve_many2many()` — FR-09: `[(6, 0, [...])]`
-- [x] `_logger.debug` для кожного запису
-
-- [x] `services/__init__.py` — імпорти всіх 3 сервісів
+- [x] `JsonRpcClient` — `authenticate`, `_call_kw`, `model_exists`, `fields_get`, `search_count`, `search_read`, `_handle_rpc_error`
+- [x] `FieldMapper` — `build_field_lines`
+- [x] `RecordImporter` — `process_record`, `_prepare_values`, `_find_local_record`, `_resolve_many2one`, `_resolve_many2many`
+- [x] `services/__init__.py` — імпорти
 
 ---
 
 ## Milestone 4: Методи візарда
 
-> Мета: підключити сервіси до UI-дій
-
 ### 4.1 `action_analyse()`
-- [ ] `_get_rpc_client()` → authenticate → model_exists → search_count → FieldMapper
-- [ ] `state = 'analysed'`
+- [x] `_validate_connection_fields()` — окремий helper, перевіряє 5 обов'язкових полів
+- [x] `_get_rpc_client()` → authenticate → зберігає `source_session_id`
+- [x] `model_exists()` → `UserError` якщо модель не існує на джерелі
+- [x] `search_count` джерела + `search_count` поточної БД
+- [x] `FieldMapper.build_field_lines()` → `(5,0,0)` + `(0,0,line)` записи
+- [x] `state = 'analysed'`
 
 ### 4.2 `action_import()`
-- [ ] Перевірка state, скидання stats, `state = 'loading'`, form reload
+- [x] Перевірка `state == 'analysed'` → `UserError`
+- [x] Скидання `stats_*`, `progress`, `progress_label`
+- [x] `state = 'loading'`
+- [x] Повертає `ir.actions.act_window` (form reload, `target='new'`)
 
 ### 4.3 `action_delete()`
-- [ ] Confirm-діалог → `unlink()` → `record_count_target = 0`
+- [x] Перевірка `target_model_id`
+- [x] `search([]).unlink()` + `record_count_target = 0`
+- [x] Повертає `display_notification` з підсумком
+- [x] Confirm-діалог — через `confirm=""` на кнопці у view (M5)
 
 ---
 
