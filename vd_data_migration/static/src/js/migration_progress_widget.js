@@ -4,6 +4,7 @@ import { Component, useState, onMounted } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { useService } from "@web/core/utils/hooks";
+import { rpc } from "@web/core/network/rpc"; // standalone function in Odoo 17+
 
 const BATCH_SIZE = 100; // NFR-04
 
@@ -12,14 +13,13 @@ export class MigrationProgressWidget extends Component {
     static props = { ...standardFieldProps };
 
     setup() {
-        this.rpc          = useService("rpc");
+        // In Odoo 17+ rpc is a standalone function, NOT a service.
+        // useService("rpc") no longer exists.
         this.notification = useService("notification");
         this._stopped     = false;
 
         const data = this.props.record.data;
 
-        // Initialise from stored wizard values so a reopened form
-        // shows the last run’s result without re-running the import.
         this.state = useState({
             progress:      data.progress       ?? 0,
             label:         data.progress_label ?? "",
@@ -33,10 +33,8 @@ export class MigrationProgressWidget extends Component {
         });
 
         onMounted(() => {
-            // Start the import loop after mount so the progress bar
-            // renders immediately (intentionally not awaited).
             if (this.props.record.data.state === "loading") {
-                this.startImport();
+                this.startImport(); // intentionally not awaited
             }
         });
     }
@@ -54,17 +52,16 @@ export class MigrationProgressWidget extends Component {
         this.state.batchesLoaded = 0;
         this.state.stats         = { created: 0, updated: 0, errors: 0 };
 
-        // offset reflects the already-processed batches when resuming (FR-03)
         let offset    = (startBatch - 1) * BATCH_SIZE;
         let processed = offset;
 
         // ── OUTER LOOP: batches ──────────────────────────────────
         outerLoop: while (true) {
-            if (this._stopped) break; // FR-10: check before fetch
+            if (this._stopped) break;
 
             let batchData;
             try {
-                batchData = await this.rpc("/vd_migration/fetch_batch", {
+                batchData = await rpc("/vd_migration/fetch_batch", {
                     wizard_id: wizardId,
                     offset,
                     limit: BATCH_SIZE,
@@ -88,15 +85,15 @@ export class MigrationProgressWidget extends Component {
             }
 
             const records = batchData.records ?? [];
-            if (records.length === 0) break; // end of data (FR-06)
+            if (records.length === 0) break;
 
             // ── INNER LOOP: per-record ─────────────────────────
             for (const record of records) {
-                if (this._stopped) break outerLoop; // FR-10: check before process
+                if (this._stopped) break outerLoop;
 
                 let result;
                 try {
-                    result = await this.rpc("/vd_migration/process_record", {
+                    result = await rpc("/vd_migration/process_record", {
                         wizard_id: wizardId,
                         record,
                     });
@@ -116,7 +113,7 @@ export class MigrationProgressWidget extends Component {
                 }
 
                 processed += 1;
-                this._updateProgress(processed, total); // FR-11: update after every record
+                this._updateProgress(processed, total);
             }
 
             offset += records.length;
@@ -128,7 +125,7 @@ export class MigrationProgressWidget extends Component {
         this.state.status = finalState;
 
         try {
-            await this.rpc("/vd_migration/finalize", {
+            await rpc("/vd_migration/finalize", {
                 wizard_id: wizardId,
                 state:     finalState,
                 stats:     { ...this.state.stats },
@@ -157,7 +154,7 @@ export class MigrationProgressWidget extends Component {
     }
 
     stopImport() {
-        this._stopped = true; // FR-10: checked at top of both loops
+        this._stopped = true;
     }
 
     // ── Computed getters ──────────────────────────────────────────
